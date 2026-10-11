@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Skye Crafts — Shop Admin</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+<body>
+
+<header id="siteHeader" class="scrolled">
+  <div class="container nav-wrap">
+    <div class="admin-brand">
+      <a class="brand" href="{{ url_for('index') }}" aria-label="Skye Crafts — back to the shop">Skye Crafts</a>
+      <span class="admin-tag">Shop admin</span>
+    </div>
+    <div class="header-right">
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('index') }}">View shop</a>
+      <button class="btn btn-secondary btn-sm" type="button" id="adminLogout" hidden>Log out</button>
+    </div>
+  </div>
+</header>
+
+<main class="container admin-main" id="adminApp">
+  <p class="grid-note">Loading…</p>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+
+</body>
+</html>
