@@ -1,431 +1,819 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Skye Crafts creates handcrafted fuzzy-wire bouquets, keychains, pots, figurines, and custom gifts in the Philippines.">
-<meta name="robots" content="index, follow">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Skye Crafts">
-<meta property="og:description" content="Handcrafted gifts, bouquets, and custom creations made with care.">
-<title>Skye Crafts — Home</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Skye Crafts creates handcrafted fuzzy-wire bouquets, keychains, pots, figurines, and custom gifts in the Philippines."
+    />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Skye Crafts" />
+    <meta
+      property="og:description"
+      content="Handcrafted gifts, bouquets, and custom creations made with care."
+    />
+    <title>Skye Crafts — Home</title>
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-
-</head>
-<body data-page="{{ page_mode|default('home') }}">
-
-<header id="siteHeader">
-  <div class="container nav-wrap">
-    <button class="brand" id="brandTop" type="button" aria-label="Skye Crafts — back to top">Skye Crafts</button>
-    <nav>
-      <ul>
-        <li><a href="{{ url_for('index') }}" class="{{ 'active' if page_mode == 'home' else '' }}">Home</a></li>
-        <li><a href="{{ url_for('products_page') }}" class="{{ 'active' if page_mode == 'products' else '' }}">Products</a></li>
-        <li><a href="{{ url_for('index') }}#custom">Custom Orders</a></li>
-        <li><a href="{{ url_for('index') }}#gallery">Gallery</a></li>
-        <li><a href="{{ url_for('index') }}#faq">FAQ</a></li>
-        <li><a href="{{ url_for('index') }}#about">About Us</a></li>
-      </ul>
-    </nav>
-    <div class="header-right">
-      <div class="auth-actions" id="authActions">
-        <button class="header-signin" id="signInBtn" type="button">Sign in</button>
-        <button class="header-signup" id="signUpBtn" type="button">Sign up</button>
-      </div>
-      <div class="account-wrap" id="accountWrap" hidden>
-        <button class="account-btn" id="accountBtn" type="button" aria-label="Log in or create an account" aria-haspopup="true" aria-expanded="false">
-          <svg id="accountIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B3A45" stroke-width="1.8" aria-hidden="true">
-            <circle cx="12" cy="8" r="4"></circle>
-            <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"></path>
-          </svg>
-          <span id="accountInitial" hidden></span>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
+  <body data-page="{{ page_mode|default('home') }}">
+    <header id="siteHeader">
+      <div class="container nav-wrap">
+        <button
+          class="brand"
+          id="brandTop"
+          type="button"
+          aria-label="Skye Crafts — back to top"
+        >
+          Skye Crafts
         </button>
-        <div class="account-menu" id="accountMenu" hidden></div>
-      </div>
-      <button class="cart-btn" id="cartBtn" type="button" aria-label="View cart, 0 items">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B3A45" stroke-width="1.8">
-          <circle cx="9" cy="21" r="1"></circle><circle cx="19" cy="21" r="1"></circle>
-          <path d="M1 1h3l2.4 13.2a2 2 0 002 1.8h9.2a2 2 0 002-1.7L21 6H6"></path>
-        </svg>
-        <span class="cart-count" id="cartCount">0</span>
-      </button>
-      <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open menu">
-        <span></span><span></span><span></span>
-      </button>
-    </div>
-  </div>
-</header>
-
-<main>
-
-  <!-- HERO -->
-  {% if page_mode != 'products' %}
-  <section class="hero" id="home">
-    <div class="container hero-grid">
-      <div class="hero-copy">
-        <p class="intro-line">Handmade fuzzy‑wire crafts &amp; custom gifts</p>
-        <h1>Unbox the Incredible Surprise of Skye Crafts.</h1>
-        <p class="desc">Every bouquet, keychain, and figurine is shaped by hand from fuzzy wire — made to order, made for gifting, made to feel personal.</p>
-        <div class="hero-btns">
-          <a href="#shop" class="btn btn-primary">Shop Now</a>
-          <a href="#custom-request" class="btn btn-secondary">Create a Custom Order</a>
+        <nav>
+          <ul>
+            <li>
+              <a
+                href="{{ url_for('index') }}"
+                class="{{ 'active' if page_mode == 'home' else '' }}"
+                >Home</a
+              >
+            </li>
+            <li>
+              <a
+                href="{{ url_for('products_page') }}"
+                class="{{ 'active' if page_mode == 'products' else '' }}"
+                >Products</a
+              >
+            </li>
+            <li><a href="{{ url_for('index') }}#custom">Custom Orders</a></li>
+            <li><a href="{{ url_for('index') }}#gallery">Gallery</a></li>
+            <li><a href="{{ url_for('index') }}#faq">FAQ</a></li>
+            <li><a href="{{ url_for('index') }}#about">About Us</a></li>
+          </ul>
+        </nav>
+        <div class="header-right">
+          <div class="auth-actions" id="authActions">
+            <button class="header-signin" id="signInBtn" type="button">
+              Sign in
+            </button>
+            <button class="header-signup" id="signUpBtn" type="button">
+              Sign up
+            </button>
+          </div>
+          <div class="account-wrap" id="accountWrap" hidden>
+            <button
+              class="account-btn"
+              id="accountBtn"
+              type="button"
+              aria-label="Log in or create an account"
+              aria-haspopup="true"
+              aria-expanded="false"
+            >
+              <svg
+                id="accountIcon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#6B3A45"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="8" r="4"></circle>
+                <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"></path>
+              </svg>
+              <span id="accountInitial" hidden></span>
+            </button>
+            <div class="account-menu" id="accountMenu" hidden></div>
+          </div>
+          <button
+            class="cart-btn"
+            id="cartBtn"
+            type="button"
+            aria-label="View cart, 0 items"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#6B3A45"
+              stroke-width="1.8"
+            >
+              <circle cx="9" cy="21" r="1"></circle>
+              <circle cx="19" cy="21" r="1"></circle>
+              <path
+                d="M1 1h3l2.4 13.2a2 2 0 002 1.8h9.2a2 2 0 002-1.7L21 6H6"
+              ></path>
+            </svg>
+            <span class="cart-count" id="cartCount">0</span>
+          </button>
+          <button
+            class="menu-toggle"
+            id="menuToggle"
+            type="button"
+            aria-label="Open menu"
+          >
+            <span></span><span></span><span></span>
+          </button>
         </div>
       </div>
+    </header>
 
-      <div class="hero-art">
-        <div class="hero-art-bg"></div>
-        <svg viewBox="0 0 380 380" width="360" height="360" role="img" aria-label="Illustration of a handmade fuzzy-wire pompom bouquet">
-          <path d="M190 330 C 170 260, 150 220, 120 180" stroke="#B7AB97" stroke-width="3" fill="none" stroke-linecap="round"/>
-          <path d="M190 330 C 190 260, 190 210, 190 150" stroke="#B7AB97" stroke-width="3" fill="none" stroke-linecap="round"/>
-          <path d="M190 330 C 210 260, 230 220, 258 178" stroke="#B7AB97" stroke-width="3" fill="none" stroke-linecap="round"/>
-          <path d="M190 330 C 195 270, 175 235, 150 205" stroke="#B7AB97" stroke-width="3" fill="none" stroke-linecap="round"/>
-          <path d="M190 330 C 185 270, 205 235, 230 205" stroke="#B7AB97" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <main>
+      <!-- HERO -->
+      {% if page_mode != 'products' %}
+      <section class="hero" id="home">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="intro-line">
+              Handmade fuzzy‑wire crafts &amp; custom gifts
+            </p>
+            <h1>Unbox the Incredible Surprise of Skye Crafts.</h1>
+            <p class="desc">
+              Every bouquet, keychain, and figurine is shaped by hand from fuzzy
+              wire — made to order, made for gifting, made to feel personal.
+            </p>
+            <div class="hero-btns">
+              <a href="{{ url_for('products_page') }}" class="btn btn-primary"
+                >Shop Now</a
+              >
+              <a href="#custom-request" class="btn btn-secondary"
+                >Create a Custom Order</a
+              >
+            </div>
+          </div>
 
-          <path d="M155 336 q35 26 70 0" stroke="#C6A15B" stroke-width="10" fill="none" stroke-linecap="round"/>
-          <path d="M170 336 l-14 22" stroke="#C6A15B" stroke-width="8" fill="none" stroke-linecap="round"/>
-          <path d="M210 336 l14 22" stroke="#C6A15B" stroke-width="8" fill="none" stroke-linecap="round"/>
+          <div class="hero-art">
+            <div class="hero-art-bg"></div>
+            <svg
+              viewBox="0 0 380 380"
+              width="360"
+              height="360"
+              role="img"
+              aria-label="Illustration of a handmade fuzzy-wire pompom bouquet"
+            >
+              <path
+                d="M190 330 C 170 260, 150 220, 120 180"
+                stroke="#B7AB97"
+                stroke-width="3"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M190 330 C 190 260, 190 210, 190 150"
+                stroke="#B7AB97"
+                stroke-width="3"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M190 330 C 210 260, 230 220, 258 178"
+                stroke="#B7AB97"
+                stroke-width="3"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M190 330 C 195 270, 175 235, 150 205"
+                stroke="#B7AB97"
+                stroke-width="3"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M190 330 C 185 270, 205 235, 230 205"
+                stroke="#B7AB97"
+                stroke-width="3"
+                fill="none"
+                stroke-linecap="round"
+              />
 
-          <g>
-            <circle cx="120" cy="178" r="26" fill="#F0C8D2"/>
-            <circle cx="104" cy="166" r="11" fill="#F6D9E0"/>
-            <circle cx="136" cy="166" r="11" fill="#E2A4B4"/>
-            <circle cx="120" cy="192" r="11" fill="#F6D9E0"/>
-            <circle cx="108" cy="188" r="9" fill="#E2A4B4"/>
-          </g>
-          <g>
-            <circle cx="190" cy="145" r="32" fill="#E2A4B4"/>
-            <circle cx="170" cy="130" r="13" fill="#F0C8D2"/>
-            <circle cx="212" cy="130" r="13" fill="#F0C8D2"/>
-            <circle cx="190" cy="118" r="13" fill="#F6D9E0"/>
-            <circle cx="190" cy="164" r="13" fill="#F6D9E0"/>
-          </g>
-          <g>
-            <circle cx="258" cy="176" r="24" fill="#C6A15B"/>
-            <circle cx="245" cy="163" r="10" fill="#DCB975"/>
-            <circle cx="271" cy="163" r="10" fill="#DCB975"/>
-            <circle cx="258" cy="190" r="10" fill="#EAD3A0"/>
-          </g>
-          <g>
-            <circle cx="150" cy="205" r="16" fill="#FBEFE9"/>
-          </g>
-          <g>
-            <circle cx="232" cy="203" r="16" fill="#F0C8D2"/>
-          </g>
-        </svg><div class="hero-badge"><strong>Made by hand ♡</strong>Unique pieces for every occasion</div>
-      </div>
-    </div>
-  </section>
+              <path
+                d="M155 336 q35 26 70 0"
+                stroke="#C6A15B"
+                stroke-width="10"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M170 336 l-14 22"
+                stroke="#C6A15B"
+                stroke-width="8"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M210 336 l14 22"
+                stroke="#C6A15B"
+                stroke-width="8"
+                fill="none"
+                stroke-linecap="round"
+              />
 
-  {% endif %}
-  <!-- FEATURED CREATIONS (products come from the database) -->
-  <section id="shop">
-    <div class="container">
-      <div class="section-head">
-        <div class="section-kicker">{{ 'Store collection' if page_mode == 'products' else 'The collection' }}</div><h2>{{ 'Shop All Creations' if page_mode == 'products' else 'Featured Creations' }}</h2>
-        <p>A few favorites from the shop — each one shaped, wrapped, and finished by hand.</p>
-      </div>
-
-      <div class="product-browser reveal" aria-label="Product search and filters">
-        <label class="product-search" for="productSearch">
-          <span aria-hidden="true">⌕</span>
-          <input id="productSearch" type="search" placeholder="Search creations, categories, or details" autocomplete="off">
-        </label>
-        <button class="filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="advancedFilters">Filters</button>
-      </div>
-      <div class="advanced-filters" id="advancedFilters" hidden>
-        <label class="filter-field">Minimum price (₱)<input id="minPrice" type="number" min="0" max="100000" step="0.01" inputmode="decimal" placeholder="0"></label>
-        <label class="filter-field">Maximum price (₱)<input id="maxPrice" type="number" min="0" max="100000" step="0.01" inputmode="decimal" placeholder="Any"></label>
-        <label class="stock-filter"><input id="inStockOnly" type="checkbox"> Ready to order only</label>
-        <button class="clear-filters" id="clearFilters" type="button">Clear filters</button>
-      </div>
-      <div class="filter-row" id="categoryFilters" role="group" aria-label="Filter by category" hidden></div>
-
-      <div class="product-grid" id="productGrid" aria-live="polite">
-        <p class="grid-note">Loading creations…</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- WHY CHOOSE -->
-  <section class="why-section">
-    <div class="container">
-      <div class="section-head">
-        <div class="section-kicker">Made differently</div><h2>Why Choose Skye Crafts</h2>
-        <p>What makes a handmade gift different from an ordinary one.</p>
-      </div>
-      <div class="why-list">
-        <div class="why-item">
-          <div class="why-icon"><span></span></div>
-          <div>
-            <h3>Handmade with care</h3>
-            <p>Every piece is shaped by hand, one wire at a time — never mass‑produced.</p>
+              <g>
+                <circle cx="120" cy="178" r="26" fill="#F0C8D2" />
+                <circle cx="104" cy="166" r="11" fill="#F6D9E0" />
+                <circle cx="136" cy="166" r="11" fill="#E2A4B4" />
+                <circle cx="120" cy="192" r="11" fill="#F6D9E0" />
+                <circle cx="108" cy="188" r="9" fill="#E2A4B4" />
+              </g>
+              <g>
+                <circle cx="190" cy="145" r="32" fill="#E2A4B4" />
+                <circle cx="170" cy="130" r="13" fill="#F0C8D2" />
+                <circle cx="212" cy="130" r="13" fill="#F0C8D2" />
+                <circle cx="190" cy="118" r="13" fill="#F6D9E0" />
+                <circle cx="190" cy="164" r="13" fill="#F6D9E0" />
+              </g>
+              <g>
+                <circle cx="258" cy="176" r="24" fill="#C6A15B" />
+                <circle cx="245" cy="163" r="10" fill="#DCB975" />
+                <circle cx="271" cy="163" r="10" fill="#DCB975" />
+                <circle cx="258" cy="190" r="10" fill="#EAD3A0" />
+              </g>
+              <g>
+                <circle cx="150" cy="205" r="16" fill="#FBEFE9" />
+              </g>
+              <g>
+                <circle cx="232" cy="203" r="16" fill="#F0C8D2" />
+              </g>
+            </svg>
           </div>
         </div>
-        <div class="why-item">
-          <div class="why-icon"><span></span></div>
-          <div>
-            <h3>Customizable designs</h3>
-            <p>Choose your colors, size, and details, or send a reference to recreate.</p>
-          </div>
-        </div>
-        <div class="why-item">
-          <div class="why-icon"><span></span></div>
-          <div>
-            <h3>Perfect for gifts</h3>
-            <p>Wrapped and ready for graduations, birthdays, anniversaries, and more.</p>
-          </div>
-        </div>
-        <div class="why-item">
-          <div class="why-icon"><span></span></div>
-          <div>
-            <h3>Carefully crafted</h3>
-            <p>Each order is checked for detail and finish before it leaves the workbench.</p>
-          </div>
-        </div>
-        <div class="why-item">
-          <div class="why-icon"><span></span></div>
-          <div>
-            <h3>Personalized orders</h3>
-            <p>Add a message card or charm to make a piece feel truly one‑of‑a‑kind.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+      </section>
 
-  <!-- HOW IT WORKS + CUSTOM ORDER REQUEST -->
-  <section id="custom">
-    <div class="container">
-      <div class="section-head">
-        <div class="section-kicker">Simple &amp; personal</div><h2>How It Works</h2>
-        <p>From idea to unboxing, in four simple steps.</p>
-      </div>
-      <div class="steps">
-        <div class="step">
-          <div class="step-num">1</div>
-          <h3>Choose a product or customization</h3>
-          <p>Pick a ready‑made design or start a custom request.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">2</div>
-          <h3>Submit your order</h3>
-          <p>Share your colors, size, and any reference image.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">3</div>
-          <h3>We craft your handmade item</h3>
-          <p>Your piece is shaped, wrapped, and quality‑checked by hand.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">4</div>
-          <h3>Receive or pick up your order</h3>
-          <p>Get it shipped via J&amp;T Express or pick it up in person.</p>
-        </div>
-      </div>
+      {% endif %}
+      <!-- FEATURED CREATIONS (products come from the database) -->
+      <section id="shop">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-kicker">
+              {{ 'Store collection' if page_mode == 'products' else 'The
+              collection' }}
+            </div>
+            <h2>
+              {{ 'Shop All Creations' if page_mode == 'products' else 'Featured
+              Creations' }}
+            </h2>
+            <p>
+              A few favorites from the shop — each one shaped, wrapped, and
+              finished by hand.
+            </p>
+          </div>
 
-      <div class="custom-card" id="custom-request">
-        <div class="custom-intro">
-          <div class="section-kicker">Made for you</div>
-          <h3>Create a Custom Order</h3>
-          <p>Tell us the occasion, the colors, and the design. Add a link to a reference image if you have one, and we'll shape it by hand.</p>
-        </div>
-        <form id="customForm" class="form-stack">
-          <div class="form-2col">
-            <label class="field">Your name
-              <input name="name" required minlength="2" maxlength="80" autocomplete="name">
+          <div
+            class="product-browser reveal"
+            aria-label="Product search and filters"
+          >
+            <label class="product-search" for="productSearch">
+              <span aria-hidden="true">⌕</span>
+              <input
+                id="productSearch"
+                type="search"
+                placeholder="Search creations, categories, or details"
+                autocomplete="off"
+              />
             </label>
-            <label class="field">Email or mobile number
-              <input name="contact" required minlength="5" maxlength="120" autocomplete="email">
-            </label>
+            <button
+              class="filter-toggle"
+              id="filterToggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="advancedFilters"
+            >
+              Filters
+            </button>
           </div>
-          <label class="field">Occasion <span class="opt">(optional)</span>
-            <input name="occasion" maxlength="100" placeholder="Graduation, birthday, anniversary…">
+          <div class="advanced-filters" id="advancedFilters" hidden>
+            <label class="filter-field"
+              >Minimum price (₱)<input
+                id="minPrice"
+                type="number"
+                min="0"
+                max="100000"
+                step="0.01"
+                inputmode="decimal"
+                placeholder="0"
+            /></label>
+            <label class="filter-field"
+              >Maximum price (₱)<input
+                id="maxPrice"
+                type="number"
+                min="0"
+                max="100000"
+                step="0.01"
+                inputmode="decimal"
+                placeholder="Any"
+            /></label>
+            <label class="stock-filter"
+              ><input id="inStockOnly" type="checkbox" /> Ready to order
+              only</label
+            >
+            <button class="clear-filters" id="clearFilters" type="button">
+              Clear filters
+            </button>
+          </div>
+          <div
+            class="filter-row"
+            id="categoryFilters"
+            role="group"
+            aria-label="Filter by category"
+            hidden
+          ></div>
+
+          <div class="product-grid" id="productGrid" aria-live="polite">
+            <p class="grid-note">Loading creations…</p>
+          </div>
+        </div>
+      </section>
+
+      {% if page_mode != 'products' %}
+      <!-- WHY CHOOSE -->
+      <section class="why-section">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-kicker">Made differently</div>
+            <h2>Why Choose Skye Crafts</h2>
+            <p>What makes a handmade gift different from an ordinary one.</p>
+          </div>
+          <div class="why-list">
+            <div class="why-item">
+              <div class="why-icon"><span></span></div>
+              <div>
+                <h3>Handmade with care</h3>
+                <p>
+                  Every piece is shaped by hand, one wire at a time — never
+                  mass‑produced.
+                </p>
+              </div>
+            </div>
+            <div class="why-item">
+              <div class="why-icon"><span></span></div>
+              <div>
+                <h3>Customizable designs</h3>
+                <p>
+                  Choose your colors, size, and details, or send a reference to
+                  recreate.
+                </p>
+              </div>
+            </div>
+            <div class="why-item">
+              <div class="why-icon"><span></span></div>
+              <div>
+                <h3>Perfect for gifts</h3>
+                <p>
+                  Wrapped and ready for graduations, birthdays, anniversaries,
+                  and more.
+                </p>
+              </div>
+            </div>
+            <div class="why-item">
+              <div class="why-icon"><span></span></div>
+              <div>
+                <h3>Carefully crafted</h3>
+                <p>
+                  Each order is checked for detail and finish before it leaves
+                  the workbench.
+                </p>
+              </div>
+            </div>
+            <div class="why-item">
+              <div class="why-icon"><span></span></div>
+              <div>
+                <h3>Personalized orders</h3>
+                <p>
+                  Add a message card or charm to make a piece feel truly
+                  one‑of‑a‑kind.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOW IT WORKS + CUSTOM ORDER REQUEST -->
+      <section id="custom">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-kicker">Simple &amp; personal</div>
+            <h2>How It Works</h2>
+            <p>From idea to unboxing, in four simple steps.</p>
+          </div>
+          <div class="steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <h3>Choose a product or customization</h3>
+              <p>Pick a ready‑made design or start a custom request.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <h3>Submit your order</h3>
+              <p>Share your colors, size, and any reference image.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <h3>We craft your handmade item</h3>
+              <p>Your piece is shaped, wrapped, and quality‑checked by hand.</p>
+            </div>
+            <div class="step">
+              <div class="step-num">4</div>
+              <h3>Receive or pick up your order</h3>
+              <p>Get it shipped via J&amp;T Express or pick it up in person.</p>
+            </div>
+          </div>
+
+          <div class="custom-card" id="custom-request">
+            <div class="custom-intro">
+              <div class="section-kicker">Made for you</div>
+              <h3>Create a Custom Order</h3>
+              <p>
+                Tell us the occasion, the colors, and the design. Add a link to
+                a reference image if you have one, and we'll shape it by hand.
+              </p>
+            </div>
+            <form id="customForm" class="form-stack">
+              <div class="form-2col">
+                <label class="field"
+                  >Your name
+                  <input
+                    name="name"
+                    required
+                    minlength="2"
+                    maxlength="80"
+                    autocomplete="name"
+                  />
+                </label>
+                <label class="field"
+                  >Email or mobile number
+                  <input
+                    name="contact"
+                    required
+                    minlength="5"
+                    maxlength="120"
+                    autocomplete="email"
+                  />
+                </label>
+              </div>
+              <label class="field"
+                >Occasion <span class="opt">(optional)</span>
+                <input
+                  name="occasion"
+                  maxlength="100"
+                  placeholder="Graduation, birthday, anniversary…"
+                />
+              </label>
+              <label class="field"
+                >Your idea
+                <textarea
+                  name="details"
+                  required
+                  minlength="10"
+                  maxlength="2000"
+                  rows="5"
+                  placeholder="Colors, size, design, message card or charm, reference image link…"
+                ></textarea>
+              </label>
+              <p class="form-error" id="customError" role="alert"></p>
+              <button class="btn btn-primary" type="submit" id="customSubmit">
+                Send request
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section id="gallery">
+        <div class="container">
+          <div class="section-head reveal">
+            <div class="section-kicker">Little moments</div>
+            <h2>Made to be remembered.</h2>
+            <p>
+              Handcrafted pieces designed to turn ordinary gifts into keepsakes.
+            </p>
+          </div>
+          <div class="gallery-grid reveal">
+            <div class="gallery-item">
+              <span class="gallery-label">Handmade bouquets</span>
+            </div>
+            <div class="gallery-item">
+              <span class="gallery-label">Gift details</span>
+            </div>
+            <div class="gallery-item">
+              <span class="gallery-label">Soft &amp; playful</span>
+            </div>
+            <div class="gallery-item">
+              <span class="gallery-label">Custom pieces</span>
+            </div>
+            <div class="gallery-item">
+              <span class="gallery-label">Made with love</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="faq">
+        <div class="container">
+          <div class="section-head reveal">
+            <div class="section-kicker">Need to know</div>
+            <h2>Frequently Asked Questions</h2>
+            <p>Quick answers before you place your order.</p>
+          </div>
+          <div class="faq-list reveal">
+            <div class="faq-item">
+              <button class="faq-question" type="button">
+                Can I request a custom design?<span>+</span>
+              </button>
+              <div class="faq-answer">
+                Yes. Share your preferred colors, size, occasion, and a
+                reference image if you have one. Custom designs can be discussed
+                before crafting begins.
+              </div>
+            </div>
+            <div class="faq-item">
+              <button class="faq-question" type="button">
+                How long does an order take?<span>+</span>
+              </button>
+              <div class="faq-answer">
+                Ready-made pieces can be prepared quickly, while custom pieces
+                need additional crafting time. The exact lead time can be
+                confirmed when you submit your request.
+              </div>
+            </div>
+            <div class="faq-item">
+              <button class="faq-question" type="button">
+                Do you offer delivery and pickup?<span>+</span>
+              </button>
+              <div class="faq-answer">
+                Orders can be shipped through J&amp;T Express or picked up in
+                person, as stated in the current ordering process.
+              </div>
+            </div>
+            <div class="faq-item">
+              <button class="faq-question" type="button">
+                Can I add a message or charm?<span>+</span>
+              </button>
+              <div class="faq-answer">
+                Yes. Personalized details such as a message card or charm can be
+                requested to make the piece more meaningful.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA BAND -->
+      <section>
+        <div class="container">
+          <div class="cta-band">
+            <div>
+              <h2>Have something specific in mind?</h2>
+              <p>
+                Tell us the occasion, the colors, and the design — we'll shape
+                it by hand.
+              </p>
+            </div>
+            <a href="#custom-request" class="btn btn-primary"
+              >Create a Custom Order</a
+            >
+          </div>
+        </div>
+      </section>
+      {% endif %}
+    </main>
+
+    <footer id="about">
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <div class="brand" style="cursor: default">Skye Crafts</div>
+            <p>
+              Handmade fuzzy‑wire crafts and custom gifts, shaped by hand for
+              every occasion.
+            </p>
+          </div>
+          <div class="footer-col">
+            <h4>Explore</h4>
+            <ul>
+              <li><a href="#shop">Shop</a></li>
+              <li><a href="#custom">Custom Orders</a></li>
+              <li><a href="#gallery">Gallery</a></li>
+              <li><a href="#faq">FAQ</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Connect</h4>
+            <div class="social-row">
+              <a
+                href="https://www.facebook.com/profile.php?id=61574391670769"
+                class="social-circle"
+                aria-label="Facebook"
+                target="_blank"
+                rel="noopener noreferrer"
+                >FB</a
+              >
+              <a href="#" class="social-circle" aria-label="TikTok">TT</a>
+            </div>
+            <p class="footer-contact">
+              <a href="tel:09976153258">0997 615 3258</a>
+            </p>
+          </div>
+          <div class="footer-col">
+            <h4>Stay in the loop</h4>
+            <form class="newsletter-form" id="newsletterForm">
+              <input
+                type="email"
+                name="email"
+                placeholder="Your email"
+                required
+                maxlength="254"
+                aria-label="Email address"
+              />
+              <button type="submit">Join</button>
+            </form>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          © 2026 Skye Crafts. All rights reserved.
+        </div>
+      </div>
+    </footer>
+
+    <!-- ACCOUNT: log in / register -->
+    <div class="modal-backdrop" id="authModal">
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="authTitle"
+      >
+        <button class="modal-close" type="button" data-close aria-label="Close">
+          ×
+        </button>
+        <h3 id="authTitle">Welcome back</h3>
+        <p id="authIntro">Log in to place orders and track them.</p>
+        <form id="authForm" class="form-stack">
+          <label class="field"
+            >Username
+            <input
+              name="username"
+              required
+              minlength="3"
+              maxlength="30"
+              pattern="[A-Za-z0-9_]{3,30}"
+              autocomplete="username"
+            />
           </label>
-          <label class="field">Your idea
-            <textarea name="details" required minlength="10" maxlength="2000" rows="5" placeholder="Colors, size, design, message card or charm, reference image link…"></textarea>
+          <label class="field" id="authEmailField" hidden
+            >Email <span class="opt">(for order updates)</span>
+            <input
+              name="email"
+              type="email"
+              maxlength="254"
+              autocomplete="email"
+            />
           </label>
-          <p class="form-error" id="customError" role="alert"></p>
-          <button class="btn btn-primary" type="submit" id="customSubmit">Send request</button>
+          <label class="field"
+            >Password
+            <input
+              name="password"
+              type="password"
+              required
+              maxlength="128"
+              autocomplete="current-password"
+            />
+          </label>
+          <p class="fine-print" id="authHint" hidden>
+            Use 10 or more characters. Usernames can contain letters, numbers,
+            and underscores.
+          </p>
+          <p class="form-error" id="authError" role="alert"></p>
+          <button class="btn btn-primary" type="submit" id="authSubmit">
+            Log in
+          </button>
+          <button class="link-btn" type="button" id="authSwitch">
+            New here? Create an account
+          </button>
         </form>
       </div>
     </div>
-  </section>
 
-
-  <section id="gallery">
-    <div class="container">
-      <div class="section-head reveal">
-        <div class="section-kicker">Little moments</div>
-        <h2>Made to be remembered.</h2>
-        <p>Handcrafted pieces designed to turn ordinary gifts into keepsakes.</p>
-      </div>
-      <div class="gallery-grid reveal">
-        <div class="gallery-item"><span class="gallery-label">Handmade bouquets</span></div>
-        <div class="gallery-item"><span class="gallery-label">Gift details</span></div>
-        <div class="gallery-item"><span class="gallery-label">Soft &amp; playful</span></div>
-        <div class="gallery-item"><span class="gallery-label">Custom pieces</span></div>
-        <div class="gallery-item"><span class="gallery-label">Made with love</span></div>
-      </div>
-    </div>
-  </section>
-
-  <section id="faq">
-    <div class="container">
-      <div class="section-head reveal">
-        <div class="section-kicker">Need to know</div>
-        <h2>Frequently Asked Questions</h2>
-        <p>Quick answers before you place your order.</p>
-      </div>
-      <div class="faq-list reveal">
-        <div class="faq-item">
-          <button class="faq-question" type="button">Can I request a custom design?<span>+</span></button>
-          <div class="faq-answer">Yes. Share your preferred colors, size, occasion, and a reference image if you have one. Custom designs can be discussed before crafting begins.</div>
-        </div>
-        <div class="faq-item">
-          <button class="faq-question" type="button">How long does an order take?<span>+</span></button>
-          <div class="faq-answer">Ready-made pieces can be prepared quickly, while custom pieces need additional crafting time. The exact lead time can be confirmed when you submit your request.</div>
-        </div>
-        <div class="faq-item">
-          <button class="faq-question" type="button">Do you offer delivery and pickup?<span>+</span></button>
-          <div class="faq-answer">Orders can be shipped through J&amp;T Express or picked up in person, as stated in the current ordering process.</div>
-        </div>
-        <div class="faq-item">
-          <button class="faq-question" type="button">Can I add a message or charm?<span>+</span></button>
-          <div class="faq-answer">Yes. Personalized details such as a message card or charm can be requested to make the piece more meaningful.</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- CTA BAND -->
-  <section>
-    <div class="container">
-      <div class="cta-band">
-        <div>
-          <h2>Have something specific in mind?</h2>
-          <p>Tell us the occasion, the colors, and the design — we'll shape it by hand.</p>
-        </div>
-        <a href="#custom-request" class="btn btn-primary">Create a Custom Order</a>
-      </div>
-    </div>
-  </section>
-
-</main>
-
-<footer id="about">
-  <div class="container">
-    <div class="footer-grid">
-      <div class="footer-brand">
-        <div class="brand" style="cursor:default;">Skye Crafts</div>
-        <p>Handmade fuzzy‑wire crafts and custom gifts, shaped by hand for every occasion.</p>
-      </div>
-      <div class="footer-col">
-        <h4>Explore</h4>
-        <ul>
-          <li><a href="#shop">Shop</a></li>
-          <li><a href="#custom">Custom Orders</a></li>
-          <li><a href="#gallery">Gallery</a></li>
-          <li><a href="#faq">FAQ</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Connect</h4>
-        <div class="social-row">
-          <a href="#" class="social-circle" aria-label="Facebook">FB</a>
-          <a href="#" class="social-circle" aria-label="TikTok">TT</a>
-        </div>
-      </div>
-      <div class="footer-col">
-        <h4>Stay in the loop</h4>
-        <form class="newsletter-form" id="newsletterForm">
-          <input type="email" name="email" placeholder="Your email" required maxlength="254" aria-label="Email address">
-          <button type="submit">Join</button>
+    <!-- CHECKOUT -->
+    <div class="modal-backdrop" id="checkoutModal">
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="checkoutTitle"
+      >
+        <button
+          class="modal-close"
+          type="button"
+          data-close
+          aria-label="Close checkout"
+        >
+          ×
+        </button>
+        <h3 id="checkoutTitle">Checkout</h3>
+        <div class="checkout-summary" id="checkoutSummary"></div>
+        <form id="checkoutForm" class="form-stack">
+          <label class="field"
+            >Recipient name
+            <input
+              name="recipient"
+              required
+              minlength="2"
+              maxlength="80"
+              autocomplete="name"
+            />
+          </label>
+          <label class="field"
+            >Mobile number
+            <input
+              name="contact"
+              required
+              minlength="7"
+              maxlength="40"
+              autocomplete="tel"
+              inputmode="tel"
+            />
+          </label>
+          <fieldset class="choice-row">
+            <legend>How would you like to receive it?</legend>
+            <label class="choice">
+              <input type="radio" name="fulfillment" value="delivery" checked />
+              <span><strong>Delivery</strong>Shipped via J&amp;T Express</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="fulfillment" value="pickup" />
+              <span><strong>Pick up</strong>Collect it in person</span>
+            </label>
+          </fieldset>
+          <label class="field" id="addressField"
+            >Delivery address
+            <textarea
+              name="address"
+              required
+              minlength="10"
+              maxlength="500"
+              rows="3"
+              autocomplete="street-address"
+            ></textarea>
+          </label>
+          <label class="field"
+            >Coupon code <span class="opt">(optional)</span>
+            <div class="coupon-row">
+              <input
+                name="coupon"
+                maxlength="40"
+                placeholder="e.g. WELCOME10"
+                autocomplete="off"
+              />
+              <button
+                class="btn btn-secondary btn-sm"
+                type="button"
+                id="applyCoupon"
+              >
+                Apply
+              </button>
+            </div>
+          </label>
+          <p class="fine-print" id="couponNote"></p>
+          <p class="fine-print" id="checkoutNote"></p>
+          <p class="form-error" id="checkoutError" role="alert"></p>
+          <button class="btn btn-primary" type="submit" id="checkoutSubmit">
+            Place order
+          </button>
         </form>
       </div>
     </div>
-    <div class="footer-bottom">© 2026 Skye Crafts. All rights reserved.</div>
-  </div>
-</footer>
 
-<!-- ACCOUNT: log in / register -->
-<div class="modal-backdrop" id="authModal">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
-    <button class="modal-close" type="button" data-close aria-label="Close">×</button>
-    <h3 id="authTitle">Welcome back</h3>
-    <p id="authIntro">Log in to place orders and track them.</p>
-    <form id="authForm" class="form-stack">
-      <label class="field">Username
-        <input name="username" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}" autocomplete="username">
-      </label>
-      <label class="field" id="authEmailField" hidden>Email <span class="opt">(for order updates)</span>
-        <input name="email" type="email" maxlength="254" autocomplete="email">
-      </label>
-      <label class="field">Password
-        <input name="password" type="password" required maxlength="128" autocomplete="current-password">
-      </label>
-      <p class="fine-print" id="authHint" hidden>Use 10 or more characters. Usernames can contain letters, numbers, and underscores.</p>
-      <p class="form-error" id="authError" role="alert"></p>
-      <button class="btn btn-primary" type="submit" id="authSubmit">Log in</button>
-      <button class="link-btn" type="button" id="authSwitch">New here? Create an account</button>
-    </form>
-  </div>
-</div>
+    <!-- MY ORDERS -->
+    <div class="modal-backdrop" id="ordersModal">
+      <div
+        class="modal wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ordersTitle"
+      >
+        <button
+          class="modal-close"
+          type="button"
+          data-close
+          aria-label="Close orders"
+        >
+          ×
+        </button>
+        <h3 id="ordersTitle">My orders</h3>
+        <div id="ordersList" class="orders-list"></div>
+      </div>
+    </div>
 
-<!-- CHECKOUT -->
-<div class="modal-backdrop" id="checkoutModal">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="checkoutTitle">
-    <button class="modal-close" type="button" data-close aria-label="Close checkout">×</button>
-    <h3 id="checkoutTitle">Checkout</h3>
-    <div class="checkout-summary" id="checkoutSummary"></div>
-    <form id="checkoutForm" class="form-stack">
-      <label class="field">Recipient name
-        <input name="recipient" required minlength="2" maxlength="80" autocomplete="name">
-      </label>
-      <label class="field">Mobile number
-        <input name="contact" required minlength="7" maxlength="40" autocomplete="tel" inputmode="tel">
-      </label>
-      <fieldset class="choice-row">
-        <legend>How would you like to receive it?</legend>
-        <label class="choice">
-          <input type="radio" name="fulfillment" value="delivery" checked>
-          <span><strong>Delivery</strong>Shipped via J&amp;T Express</span>
-        </label>
-        <label class="choice">
-          <input type="radio" name="fulfillment" value="pickup">
-          <span><strong>Pick up</strong>Collect it in person</span>
-        </label>
-      </fieldset>
-      <label class="field" id="addressField">Delivery address
-        <textarea name="address" required minlength="10" maxlength="500" rows="3" autocomplete="street-address"></textarea>
-      </label>
-      <label class="field">Coupon code <span class="opt">(optional)</span>
-        <div class="coupon-row">
-          <input name="coupon" maxlength="40" placeholder="e.g. WELCOME10" autocomplete="off">
-          <button class="btn btn-secondary btn-sm" type="button" id="applyCoupon">Apply</button>
-        </div>
-      </label>
-      <p class="fine-print" id="couponNote"></p>
-      <p class="fine-print" id="checkoutNote"></p>
-      <p class="form-error" id="checkoutError" role="alert"></p>
-      <button class="btn btn-primary" type="submit" id="checkoutSubmit">Place order</button>
-    </form>
-  </div>
-</div>
+    <div class="toast" id="toast" role="status">Added to cart</div>
 
-<!-- MY ORDERS -->
-<div class="modal-backdrop" id="ordersModal">
-  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="ordersTitle">
-    <button class="modal-close" type="button" data-close aria-label="Close orders">×</button>
-    <h3 id="ordersTitle">My orders</h3>
-    <div id="ordersList" class="orders-list"></div>
-  </div>
-</div>
-
-<div class="toast" id="toast" role="status">Added to cart</div>
-
-<script src="{{ url_for('static', filename='js/common.js') }}"></script>
-<script src="{{ url_for('static', filename='js/script.js') }}"></script>
-
-</body>
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+  </body>
 </html>
