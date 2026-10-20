@@ -167,18 +167,35 @@ Browser ──(HTML)── GET /, /products, /admin
   links target sections that are only rendered on the home page.
 - **Fix:** point them at the home page anchors, as the header already does.
 
-## 5. Risks requiring a business decision
+## 5. Business-rule decisions
 
-These are confirmed facts about current behaviour; whether they are defects
-depends on a policy only the shop owner can set. They are **not changed**.
+The owner decided DATA-001, BIZ-001, BIZ-002, DATA-002 and BIZ-003 on
+2026-10-21; all five are now implemented and covered by tests.
+
+| ID | Was | Decision and implementation | Test |
+| --- | --- | --- | --- |
+| DATA-001 | A cancelled/declined order kept its coupon use | **Release it.** Orders store `coupon_id`; `_release_order` decrements `used_count` on Cancelled/Declined, together with the restock | `test_cancelled_and_declined_orders_give_the_coupon_back` |
+| BIZ-001 | One account could reuse a coupon on every order | **One use per customer by default.** New `coupons.once_per_customer` (default 1, applied to existing coupons too); orders that were cancelled or declined don't count. Admin can untick it for store-wide vouchers | `test_coupon_is_once_per_customer_unless_disabled` |
+| BIZ-002 | Coupon dates compared in UTC | **Philippine time.** `SHOP_TZ` = UTC+8 (no DST): valid 12:00 AM on the start date to 11:59 PM on the end date | `test_coupon_dates_follow_philippine_time` |
+| DATA-002 | A retried checkout created a second order | **Return the original.** The browser sends a random `checkout_key`, reused on retry and reset when the cart changes; the server looks it up inside the checkout transaction (unique index per buyer as a backstop) and answers 200 `{duplicate: true}` | `test_retried_checkout_returns_the_original_order` |
+| BIZ-003 | Anyone signed in could review any product | **Delivered purchases only.** The API returns 403 otherwise; the reviews listing reports `can_review` so the form is only shown to eligible customers | `test_reviews_require_a_delivered_order` |
+
+Notes on these changes:
+
+- Existing data is not rewritten. `used_count` values that already include
+  cancelled orders stay as they are; only future cancellations release a use.
+  Existing reviews from non-buyers stay visible.
+- On upgrade, old orders are linked to their coupon by code, so they count
+  towards the per-customer rule and release their use if cancelled later.
+- Deleting a coupon clears `orders.coupon_id` (`ON DELETE SET NULL`); the order
+  keeps its `coupon_code` text and discount.
+- Not built: daily-resetting vouchers, and "seller service" ratings for
+  cancelled orders. Both need their own requirements.
+
+Still open:
 
 | ID | Severity | Current behaviour | Decision needed |
 | --- | --- | --- | --- |
-| DATA-001 | Medium | A cancelled/declined order still counts against a coupon's usage limit (confirmed: a `max_uses = 1` coupon is exhausted by an order that was cancelled) | Release the use on cancel/decline? |
-| BIZ-001 | Medium | No per-customer limit: one account can redeem the same coupon on every order | Should coupons be one-per-customer (always or per coupon)? |
-| BIZ-002 | Low | Coupon start/end dates are compared in **UTC**; in the Philippines (UTC+8) a coupon becomes valid at 08:00 and stays valid until 07:59 the day after its end date | Use Philippine time (`Asia/Manila`) for coupon dates? |
-| DATA-002 | Medium | No idempotency key: a retried checkout after a lost response creates a second order and reserves stock again | Accept a client-generated key and return the original order on repeat? |
-| BIZ-003 | Low | Any signed-in customer can review any visible product, purchased or not | Restrict reviews to customers with a delivered order? |
 | BIZ-004 | Low | Newsletter has no unsubscribe link or consent timestamp beyond signup time | Required before sending any campaign (data-privacy obligations) |
 
 ## 6. Security and data-integrity findings
@@ -228,7 +245,7 @@ real assistive technology.
 | --- | --- | --- |
 | PERF-001 | Medium | `/api/admin/overview` returns only the newest 200 orders and requests, with no paging: older orders become unmanageable from the dashboard |
 | PERF-002 | Low | Order emails are sent synchronously (5 s timeout) inside the request, after commit |
-| MAINT-001 | Low | Coupon eligibility and discount maths are duplicated between `validate_coupon` and `checkout` |
+| MAINT-001 | Low | Coupon eligibility and discount maths were duplicated between `validate_coupon` and `checkout`; now shared in `coupon_discount` |
 | MAINT-002 | Low | `app.py` holds configuration, schema, validation, routes and email in one 1,400-line module |
 | TEST-001 | Medium | Coverage still thin for stock exhaustion, coupon boundaries, transitions and ownership; there are no automated browser tests. This is how UI-001 and ADM-001 went unnoticed |
 
@@ -267,7 +284,7 @@ are appropriate; no measured bottleneck justifies optimisation yet.
 | 1 | CFG-001 | Done |
 | 2 | UI-001, ADM-001, DATA-004 (High) | Done in this pass |
 | 3 | SEC-002, UI-002, VAL-001, UI-003 | Done in this pass |
-| 4 | Owner decisions on DATA-001, BIZ-001, BIZ-002, DATA-002, BIZ-003 | **Blocked on owner** |
+| 4 | DATA-001, BIZ-001, BIZ-002, DATA-002, BIZ-003 (owner decided 2026-10-21) | Done |
 | 5 | TEST-001: stock-boundary, coupon-limit and transition tests; a repeatable browser smoke test | Pending |
 | 6 | PERF-001 paging; password change (SEC-005) | Pending |
 | 7 | Production items in section 9 (SEC-001, SEC-003, OPS-001) | Pending; needs hosting decision |
@@ -289,6 +306,20 @@ Behaviour changes to note: an admin status `reason` longer than 300 characters
 is now rejected with 400 instead of being silently truncated (the admin form
 already caps input at 300), and a `coupon_code` longer than 40 characters at
 checkout returns 400 instead of 409.
+
+### Second round: business rules (2026-10-21)
+
+| Check | Result |
+| --- | --- |
+| Full suite, `-W error::ResourceWarning` | **19 passed**, 0 failed |
+| Upgrade of a database created by the previous `app.py` (orders with and without a coupon), run twice | Columns and indexes added; coupon orders linked; totals unchanged; `integrity_check` ok; no foreign-key violations; second run a no-op |
+| Same upgrade on a read-only copy of the local `skyefable.db` | All row counts unchanged; integrity ok; original file's checksum unchanged; copy deleted |
+| Headless Chrome, checkout through the form | Order placed; a 32-character `checkout_key` stored |
+| Headless Chrome, reviews | Form hidden with explanatory note before delivery; shown and saving after delivery |
+| Headless Chrome, coupon form | "One use per customer" on by default; start date defaults to today in Manila |
+
+A lost-response retry was tested at the API level only; the browser run did
+not simulate a dropped connection.
 
 Not verified: real email delivery, multi-worker deployment, mobile devices and
 screen readers. The browser checks used a throw-away script outside the

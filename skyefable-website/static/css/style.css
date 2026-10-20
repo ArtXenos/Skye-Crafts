@@ -1770,6 +1770,11 @@ button {
 .review-form .field {
   width: 100%;
 }
+.review-note {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
 .review-form select {
   width: auto;
 }

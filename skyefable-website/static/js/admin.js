@@ -227,10 +227,12 @@
 
   function couponsTab() {
     const editing = data.coupons.find(coupon => coupon.id === editingCouponId);
+    // Coupon dates are Philippine calendar days (see SHOP_TZ in app.py).
+    const today = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Manila'}).format(new Date());
     const coupon = editing || {
       code: '', discount_type: 'percentage', discount_value: '', max_discount_cents: null,
-      min_order_cents: null, max_uses: 0, start_date: new Date().toISOString().slice(0, 10),
-      end_date: new Date().toISOString().slice(0, 10), is_active: true
+      min_order_cents: null, max_uses: 0, once_per_customer: true,
+      start_date: today, end_date: today, is_active: true
     };
     const isPercent = coupon.discount_type === 'percentage';
 
@@ -238,7 +240,7 @@
       <tr>
         <td><strong>${esc(item.code)}</strong></td>
         <td>${item.discount_type === 'percentage' ? `${item.discount_value}%` : money(item.discount_value)}</td>
-        <td class="num">${item.used_count}${item.max_uses ? ` / ${item.max_uses}` : ''}</td>
+        <td class="num">${item.used_count}${item.max_uses ? ` / ${item.max_uses}` : ''}${item.once_per_customer ? '<br><small class="panel-note">1 per customer</small>' : ''}</td>
         <td>${esc(item.start_date)} → ${esc(item.end_date)}</td>
         <td><span class="tag ${item.is_active ? 'ok' : 'off'}">${item.is_active ? 'Active' : 'Off'}</span></td>
         <td class="num">
@@ -285,9 +287,11 @@
                 <input name="end_date" type="date" required value="${esc(coupon.end_date)}">
               </label>
             </div>
-            <label class="field">Max uses <span class="opt">(0 = unlimited)</span>
+            <p class="panel-note">Philippine time: valid from 12:00 AM on the start date until 11:59 PM on the end date.</p>
+            <label class="field">Max uses <span class="opt">(0 = unlimited; cancelled and declined orders give their use back)</span>
               <input name="max_uses" type="number" min="0" step="1" value="${coupon.max_uses || 0}">
             </label>
+            <label class="check"><input type="checkbox" name="once_per_customer"${coupon.once_per_customer ? ' checked' : ''}> One use per customer</label>
             <label class="check"><input type="checkbox" name="is_active"${coupon.is_active ? ' checked' : ''}> Active</label>
             <p class="form-error" id="couponError" role="alert"></p>
             <div class="order-actions">
@@ -545,6 +549,7 @@
           max_discount: fields.max_discount.value || null,
           min_order: fields.min_order.value || null,
           max_uses: Number(fields.max_uses.value || 0),
+          once_per_customer: fields.once_per_customer.checked,
           start_date: fields.start_date.value,
           end_date: fields.end_date.value,
           is_active: fields.is_active.checked

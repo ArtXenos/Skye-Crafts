@@ -7,6 +7,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest import mock
 
 
@@ -61,6 +62,44 @@ class StoreApiTests(unittest.TestCase):
             headers=self.csrf(),
         )
         self.assertEqual(response.status_code, 200)
+
+    def admin_post(self, path, data):
+        """POST as the admin from a separate client, leaving the customer's
+        session in self.client untouched."""
+        admin = self.app.test_client()
+        token = admin.get("/api/state").get_json()["csrf"]
+        login = admin.post(
+            "/api/login",
+            json={"username": "testadmin", "password": "test-admin-password-123"},
+            headers={"X-CSRF-Token": token},
+        )
+        self.assertEqual(login.status_code, 200)
+        token = admin.get("/api/state").get_json()["csrf"]
+        return admin.post(path, json=data, headers={"X-CSRF-Token": token})
+
+    def create_coupon(self, code, **overrides):
+        response = self.admin_post("/api/admin/coupons", {
+            "code": code, "discount_type": "percentage", "discount_value": 10,
+            "max_uses": 0, "start_date": "2020-01-01", "end_date": "2099-12-31",
+            "is_active": True, **overrides,
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+
+    def deliver(self, order_id):
+        for status in ("Approved", "Packed", "Shipped", "Delivered"):
+            response = self.admin_post(
+                f"/api/admin/orders/{order_id}/status", {"status": status}
+            )
+            self.assertEqual(response.status_code, 200, response.get_json())
+
+    def coupon_used_count(self, code):
+        connection = sqlite3.connect(self.database.name)
+        try:
+            return connection.execute(
+                "SELECT used_count FROM coupons WHERE code = ?", (code,)
+            ).fetchone()[0]
+        finally:
+            connection.close()
 
     def stocked_product(self):
         products = self.client.get("/api/state").get_json()["products"]
@@ -310,6 +349,7 @@ class StoreApiTests(unittest.TestCase):
     def test_review_comment_is_saved(self):
         self.register()
         product = self.stocked_product()
+        self.deliver(self.place_order(product["id"]))
         response = self.client.post(
             f"/api/products/{product['id']}/reviews",
             json={"rating": 4, "text": "  Lovely colours.  "},
@@ -318,6 +358,133 @@ class StoreApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         reviews = self.client.get(f"/api/products/{product['id']}/reviews").get_json()
         self.assertIn("Lovely colours.", [review["text"] for review in reviews["reviews"]])
+
+    def test_reviews_require_a_delivered_order(self):
+        self.register()
+        product = self.stocked_product()
+        path = f"/api/products/{product['id']}/reviews"
+        self.assertFalse(self.client.get(path).get_json()["can_review"])
+        self.assertEqual(
+            self.client.post(path, json={"rating": 5}, headers=self.csrf()).status_code,
+            403,
+        )
+
+        order_id = self.place_order(product["id"])
+        self.admin_post(f"/api/admin/orders/{order_id}/status", {"status": "Approved"})
+        self.assertEqual(
+            self.client.post(path, json={"rating": 5}, headers=self.csrf()).status_code,
+            403,
+            "an order that has not been delivered does not unlock reviews",
+        )
+
+        for status in ("Packed", "Shipped", "Delivered"):
+            self.admin_post(f"/api/admin/orders/{order_id}/status", {"status": status})
+        self.assertTrue(self.client.get(path).get_json()["can_review"])
+        self.assertEqual(
+            self.client.post(path, json={"rating": 5}, headers=self.csrf()).status_code,
+            201,
+        )
+
+    def test_cancelled_and_declined_orders_give_the_coupon_back(self):
+        self.create_coupon("COMEBACK", max_uses=1)
+        self.register()
+        product = self.stocked_product()
+
+        order_id = self.place_order(product["id"], coupon_code="COMEBACK")
+        self.assertEqual(self.coupon_used_count("COMEBACK"), 1)
+        cancel = self.client.post(f"/api/orders/{order_id}/cancel", json={}, headers=self.csrf())
+        self.assertEqual(cancel.status_code, 200)
+        self.assertEqual(self.coupon_used_count("COMEBACK"), 0)
+
+        order_id = self.place_order(product["id"], coupon_code="COMEBACK")
+        decline = self.admin_post(
+            f"/api/admin/orders/{order_id}/status", {"status": "Declined"}
+        )
+        self.assertEqual(decline.status_code, 200)
+        self.assertEqual(self.coupon_used_count("COMEBACK"), 0)
+
+        # Released uses are usable again, by the same customer too.
+        self.place_order(product["id"], coupon_code="COMEBACK")
+        self.assertEqual(self.coupon_used_count("COMEBACK"), 1)
+
+    def test_coupon_is_once_per_customer_unless_disabled(self):
+        self.create_coupon("FIRSTBUY")
+        self.create_coupon("EVERYDAY", once_per_customer=False)
+        self.register()
+        product = self.stocked_product()
+        items = [{"product_id": product["id"], "quantity": 1}]
+
+        self.place_order(product["id"], coupon_code="FIRSTBUY")
+        again = self.client.post(
+            "/api/coupons/validate", json={"code": "FIRSTBUY", "items": items},
+            headers=self.csrf(),
+        )
+        self.assertEqual(again.status_code, 400)
+        self.assertIn("already used", again.get_json()["error"])
+        checkout = self.client.post(
+            "/api/checkout",
+            json={"recipient": "Test Customer", "contact": "09171234567",
+                  "fulfillment": "pickup", "items": items, "coupon_code": "FIRSTBUY"},
+            headers=self.csrf(),
+        )
+        self.assertEqual(checkout.status_code, 409)
+
+        self.place_order(product["id"], coupon_code="EVERYDAY")
+        self.place_order(product["id"], coupon_code="EVERYDAY")
+
+        self.client = self.app.test_client()
+        self.register(f"other_{id(self)}")
+        self.place_order(product["id"], coupon_code="FIRSTBUY")
+
+    def test_coupon_dates_follow_philippine_time(self):
+        self.create_coupon("MIDNIGHT", start_date="2026-11-01", end_date="2026-11-11")
+        self.create_coupon("ENDED", start_date="2026-10-01", end_date="2026-10-31")
+        self.register()
+        product = self.stocked_product()
+        items = [{"product_id": product["id"], "quantity": 1}]
+
+        class AtManilaMidnight(datetime):
+            """00:30 on 1 November in Manila is still 31 October in UTC."""
+
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 10, 31, 16, 30, tzinfo=timezone.utc).astimezone(tz)
+
+        with mock.patch.object(self.module, "datetime", AtManilaMidnight):
+            header = self.csrf()
+            started = self.client.post(
+                "/api/coupons/validate", json={"code": "MIDNIGHT", "items": items},
+                headers=header,
+            )
+            ended = self.client.post(
+                "/api/coupons/validate", json={"code": "ENDED", "items": items},
+                headers=header,
+            )
+        self.assertEqual(started.status_code, 200, started.get_json())
+        self.assertEqual(ended.status_code, 400)
+        self.assertIn("expired", ended.get_json()["error"])
+
+    def test_retried_checkout_returns_the_original_order(self):
+        self.register()
+        product = self.stocked_product()
+        stock_before = self.stock_of(product["id"])
+        key = "retry-key-0123456789abcdef"
+
+        first_id = self.place_order(product["id"], checkout_key=key)
+        retry = self.client.post(
+            "/api/checkout",
+            json={"recipient": "Test Customer", "contact": "09171234567",
+                  "fulfillment": "pickup", "checkout_key": key,
+                  "items": [{"product_id": product["id"], "quantity": 1}]},
+            headers=self.csrf(),
+        )
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.get_json(), {"ok": True, "order_id": first_id, "duplicate": True})
+        self.assertEqual(self.stock_of(product["id"]), stock_before - 1)
+        self.assertEqual(len(self.client.get("/api/orders").get_json()["orders"]), 1)
+
+        second_id = self.place_order(product["id"], checkout_key="another-key-0123456789")
+        self.assertNotEqual(second_id, first_id)
 
     def test_products_page_footer_links_reach_home_sections(self):
         response = self.client.get("/products")
