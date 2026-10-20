@@ -384,6 +384,10 @@ def payload():
 
 def text_field(data, key, minimum=1, maximum=200):
     value = data.get(key)
+    if value is None:
+        if minimum == 0:
+            return ""
+        raise APIError(f"{key.replace('_', ' ').title()} is required.")
     if not isinstance(value, str):
         raise APIError(f"{key.replace('_', ' ').title()} is required.")
     value = value.strip()

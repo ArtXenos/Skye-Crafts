@@ -132,6 +132,19 @@ class StoreApiTests(unittest.TestCase):
         self.assertIn(b'id="productSearch"', response.data)
         self.assertNotIn(b'id="home"', response.data)
 
+    def test_optional_custom_request_fields_are_accepted(self):
+        response = self.client.post(
+            "/api/custom-requests",
+            json={
+                "name": "Customer Name",
+                "contact": "09171234567",
+                "occasion": None,
+                "details": "Need a handmade bouquet in pastel tones for a birthday.",
+            },
+            headers=self.csrf(),
+        )
+        self.assertEqual(response.status_code, 201)
+
 
 if __name__ == "__main__":
     unittest.main()
