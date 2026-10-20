@@ -42,6 +42,9 @@
   let authMode = "login";
   let pendingCheckout = false; // resume checkout after logging in
   let appliedCoupon = null; // {code, discount_cents, subtotal_cents, total_cents}
+  // Sent with every attempt at the same checkout so a retry after a dropped
+  // connection returns the original order instead of placing another one.
+  let checkoutKey = null;
   let focusReturnTarget = null;
   const isProductsPage = document.body.dataset.page === "products";
   const FEATURED_COUNT = 4;
@@ -150,6 +153,7 @@
     saveCart();
     updateCartCount();
     appliedCoupon = null; // cart changed — any applied discount must be re-checked
+    checkoutKey = null; // ...and it is a different checkout now
     if (drawer.classList.contains("show")) renderCart();
   }
 
@@ -231,11 +235,15 @@
       <div class="reviews-block" id="reviewsBlock">
         <div class="review-summary" id="reviewSummary"></div>
         <div class="review-list" id="reviewList"></div>
+        <p class="review-note" id="reviewNote" hidden>Reviews are written by customers who have received this piece.</p>
         <form class="review-form" id="reviewForm" hidden>
           <div class="star-rate" id="starRate">
-            ${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" aria-label="${n} star${n === 1 ? "" : "s"}">★</button>`).join("")}
+            ${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" aria-label="${n} star${n === 1 ? "" : "s"}" aria-pressed="false">★</button>`).join("")}
           </div>
           <input type="hidden" name="rating" value="0">
+          <label class="field">Comment <span class="opt">(optional)</span>
+            <textarea name="text" maxlength="2000" rows="2"></textarea>
+          </label>
           <button class="btn btn-secondary btn-sm" type="submit">Rate this</button>
         </form>
       </div>
@@ -250,9 +258,13 @@
     summaryEl.textContent = "Loading reviews…";
     listEl.innerHTML = "";
     try {
-      const { reviews, count, average } = await api(
+      const { reviews, count, average, can_review } = await api(
         `/api/products/${id}/reviews`,
       );
+      if (id === activeProductId) {
+        $("#reviewForm").hidden = !can_review;
+        $("#reviewNote").hidden = can_review;
+      }
       summaryEl.innerHTML = count
         ? `<span class="stars">${"★".repeat(Math.round(average))}${"☆".repeat(5 - Math.round(average))}</span> ${average} · ${count} review${count === 1 ? "" : "s"}`
         : "No reviews yet — be the first to rate this piece.";
@@ -286,12 +298,17 @@
     add.textContent = info.canBuy ? "Add to Cart" : "Sold out";
 
     const reviewForm = $("#reviewForm");
-    reviewForm.hidden = !state.user;
+    // Shown once the server confirms this customer received the item.
+    reviewForm.hidden = true;
+    $("#reviewNote").hidden = true;
     reviewForm.reset();
     reviewForm.elements.rating.value = 0;
     $("#starRate")
       .querySelectorAll("button")
-      .forEach((star) => star.classList.remove("active"));
+      .forEach((star) => {
+        star.classList.remove("active");
+        star.setAttribute("aria-pressed", "false");
+      });
 
     loadReviews(id);
     openOverlay(productModal);
@@ -310,18 +327,27 @@
       .querySelectorAll("button")
       .forEach((button) => {
         button.classList.toggle("active", Number(button.dataset.star) <= value);
+        button.setAttribute(
+          "aria-pressed",
+          String(Number(button.dataset.star) === value),
+        );
       });
   });
 
   $("#reviewForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const rating = Number(event.currentTarget.elements.rating.value);
+    const fields = event.currentTarget.elements;
+    const rating = Number(fields.rating.value);
     if (!rating) {
       toast("Choose a star rating first.");
       return;
     }
     try {
-      await api(`/api/products/${activeProductId}/reviews`, { rating });
+      await api(`/api/products/${activeProductId}/reviews`, {
+        rating,
+        text: fields.text.value.trim(),
+      });
+      fields.text.value = "";
       toast("Thanks for rating this piece!");
       loadReviews(activeProductId);
     } catch (error) {
@@ -723,10 +749,16 @@
     const fields = checkoutForm.elements;
     const delivery = fields.fulfillment.value === "delivery";
 
+    // getRandomValues (unlike randomUUID) also works on plain-http hosts.
+    checkoutKey ||= Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+
     try {
       // Only ids and quantities are sent; the server looks up prices and stock,
       // and re-validates the coupon rather than trusting the client's discount.
-      await api("/api/checkout", {
+      const result = await api("/api/checkout", {
+        checkout_key: checkoutKey,
         items: cart.map((item) => ({
           product_id: item.id,
           quantity: item.qty,
@@ -741,10 +773,15 @@
       saveCart();
       updateCartCount();
       appliedCoupon = null;
+      checkoutKey = null;
       checkoutForm.reset();
       closeOverlay(checkoutModal);
       await loadState(true);
-      toast("Order placed. Thank you!");
+      toast(
+        result.duplicate
+          ? "Your order was already placed — here it is."
+          : "Order placed. Thank you!",
+      );
       openOrders();
     } catch (error) {
       if (error.status === 401) {
@@ -875,7 +912,8 @@
 
   /* ---------------------------------------------- custom order, newsletter */
 
-  $("#customForm").addEventListener("submit", async (event) => {
+  // The custom order section is only rendered on the home page.
+  $("#customForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const submit = $("#customSubmit");

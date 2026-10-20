@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 import threading
 from collections import defaultdict, deque
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from time import monotonic
 
@@ -50,6 +50,7 @@ RATE_LIMITS = {
     "/api/login": (10, 300),
     "/api/register": (5, 3600),
     "/api/checkout": (10, 300),
+    "/api/coupons/validate": (20, 300),
     "/api/custom-requests": (5, 3600),
     "/api/newsletter": (5, 3600),
 }
@@ -58,6 +59,12 @@ _rate_lock = threading.Lock()
 
 USERNAME_RE = re.compile(r"[A-Za-z0-9_]{3,30}")
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+CHECKOUT_KEY_RE = re.compile(r"[A-Za-z0-9-]{16,64}")
+
+# The shop runs on Philippine Standard Time (UTC+8, no daylight saving), so
+# coupon start and end dates are calendar days in Manila: a coupon is valid
+# from 12:00 AM on its start date until 11:59 PM on its end date.
+SHOP_TZ = timezone(timedelta(hours=8), "PST")
 
 CATEGORIES = ["Bouquets", "Keychains", "Pots", "Figurines"]
 FULFILLMENT = ("delivery", "pickup")
@@ -174,6 +181,10 @@ def init_db():
             discount_cents INTEGER NOT NULL DEFAULT 0,
             total_cents INTEGER NOT NULL CHECK (total_cents >= 0),
             coupon_code TEXT NOT NULL DEFAULT '',
+            coupon_id INTEGER REFERENCES coupons(id) ON DELETE SET NULL,
+            -- Client-generated key so a retried checkout returns the
+            -- original order instead of placing a second one.
+            checkout_key TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'Placed'
                 CHECK (status IN (
                     'Placed', 'Approved', 'Packed', 'Shipped', 'Delivered',
@@ -216,6 +227,8 @@ def init_db():
             min_order_cents INTEGER NOT NULL DEFAULT 0,
             max_uses INTEGER NOT NULL DEFAULT 0,
             used_count INTEGER NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+            once_per_customer INTEGER NOT NULL DEFAULT 1
+                CHECK (once_per_customer IN (0, 1)),
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))
@@ -295,9 +308,42 @@ def _migrate_schema(connection):
             connection.execute(
                 "ALTER TABLE orders ADD COLUMN status_reason TEXT NOT NULL DEFAULT ''"
             )
+        if "coupon_id" not in existing:
+            connection.execute(
+                "ALTER TABLE orders ADD COLUMN coupon_id INTEGER "
+                "REFERENCES coupons(id) ON DELETE SET NULL"
+            )
+            # Link earlier orders to their coupon so cancelling them releases
+            # the use and they count towards the once-per-customer limit.
+            connection.execute(
+                """
+                UPDATE orders SET coupon_id =
+                    (SELECT id FROM coupons WHERE coupons.code = orders.coupon_code)
+                WHERE coupon_code != ''
+                """
+            )
+        if "checkout_key" not in existing:
+            connection.execute(
+                "ALTER TABLE orders ADD COLUMN checkout_key TEXT NOT NULL DEFAULT ''"
+            )
         user_cols = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
         if "email" not in user_cols:
             connection.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+        coupon_cols = {row["name"] for row in connection.execute("PRAGMA table_info(coupons)")}
+        if "once_per_customer" not in coupon_cols:
+            connection.execute(
+                "ALTER TABLE coupons ADD COLUMN once_per_customer INTEGER NOT NULL "
+                "DEFAULT 1 CHECK (once_per_customer IN (0, 1))"
+            )
+        # Created here rather than in init_db because older databases only
+        # gain these columns in the steps above.
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS orders_checkout_key
+            ON orders(buyer_id, checkout_key) WHERE checkout_key != ''
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS orders_coupon ON orders(coupon_id)")
 
 
 def ensure_admin(connection):
@@ -384,6 +430,10 @@ def payload():
 
 def text_field(data, key, minimum=1, maximum=200):
     value = data.get(key)
+    if value is None:
+        if minimum == 0:
+            return ""
+        raise APIError(f"{key.replace('_', ' ').title()} is required.")
     if not isinstance(value, str):
         raise APIError(f"{key.replace('_', ' ').title()} is required.")
     value = value.strip()
@@ -531,6 +581,67 @@ def iso_date_field(data, key):
         return date.fromisoformat(value).isoformat()
     except ValueError:
         raise APIError(f"{key.replace('_', ' ').title()} must be a valid ISO date.")
+
+
+def shop_today():
+    return datetime.now(SHOP_TZ).date().isoformat()
+
+
+def coupon_discount(connection, code, user_id, subtotal, conflict=False):
+    """Check a coupon against this customer and cart subtotal and return
+    (coupon, discount_cents). Shared by the "Apply" check and checkout so
+    the two can never disagree; at checkout failures are 409 conflicts."""
+    status = 409 if conflict else 400
+    coupon = connection.execute(
+        "SELECT * FROM coupons WHERE code = ?", (code,)
+    ).fetchone()
+    if coupon is None:
+        raise APIError("Invalid coupon code.", 409 if conflict else 404)
+    if not coupon["is_active"]:
+        raise APIError("This coupon is no longer active.", status)
+
+    today = shop_today()
+    if today < coupon["start_date"]:
+        raise APIError(f"This coupon is valid starting {coupon['start_date']}.", status)
+    if today > coupon["end_date"]:
+        raise APIError("This coupon has expired.", status)
+    if coupon["max_uses"] > 0 and coupon["used_count"] >= coupon["max_uses"]:
+        raise APIError("This coupon has reached its usage limit.", status)
+    # Cancelled and declined orders give their coupon back, so they don't count.
+    if coupon["once_per_customer"] and connection.execute(
+        """
+        SELECT 1 FROM orders
+        WHERE buyer_id = ? AND coupon_id = ?
+          AND status NOT IN ('Declined', 'Cancelled')
+        """,
+        (user_id, coupon["id"]),
+    ).fetchone():
+        raise APIError("You've already used this coupon.", status)
+    if coupon["min_order_cents"] > 0 and subtotal < coupon["min_order_cents"]:
+        raise APIError(
+            f"This coupon needs a minimum order of "
+            f"₱{coupon['min_order_cents'] / 100:,.2f}.", status
+        )
+
+    if coupon["discount_type"] == "percentage":
+        discount = subtotal * coupon["discount_value"] // 100
+        if coupon["max_discount_cents"] > 0:
+            discount = min(discount, coupon["max_discount_cents"])
+    else:
+        discount = min(coupon["discount_value"], subtotal)
+    return coupon, discount
+
+
+def has_received(connection, user_id, product_id):
+    """Reviews are limited to customers with a delivered order of the item."""
+    return connection.execute(
+        """
+        SELECT 1 FROM order_items i JOIN orders o ON o.id = i.order_id
+        WHERE o.buyer_id = ? AND i.product_id = ? AND o.status = 'Delivered'
+        LIMIT 1
+        """,
+        (user_id, product_id),
+    ).fetchone() is not None
 
 
 def enforce_rate_limit():
@@ -693,7 +804,7 @@ def logout():
 def validate_coupon():
     """Validate a coupon against the current cart. Ported from
     KamiKoto's CouponService.validateCoupon (src/utils/couponService.js)."""
-    require_user()
+    user = require_user()
     data = payload()
     code = text_field(data, "code", 1, 40).upper()
     entries = data.get("items")
@@ -701,25 +812,10 @@ def validate_coupon():
         raise APIError("Your cart is empty.")
 
     connection = db()
-    coupon = connection.execute(
-        "SELECT * FROM coupons WHERE code = ?", (code,)
-    ).fetchone()
-    if coupon is None:
-        raise APIError("Invalid coupon code.", 404)
-    if not coupon["is_active"]:
-        raise APIError("This coupon is no longer active.")
-
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).date().isoformat()
-    if now < coupon["start_date"]:
-        raise APIError(f"This coupon is valid starting {coupon['start_date']}.")
-    if now > coupon["end_date"]:
-        raise APIError("This coupon has expired.")
-    if coupon["max_uses"] > 0 and coupon["used_count"] >= coupon["max_uses"]:
-        raise APIError("This coupon has reached its usage limit.")
-
     subtotal = 0
     for entry in entries:
+        if not isinstance(entry, dict):
+            raise APIError("Your cart could not be read.")
         product_id = integer_field(entry, "product_id", 1, 2**63 - 1)
         quantity = integer_field(entry, "quantity", 1, 99)
         product = connection.execute(
@@ -730,18 +826,7 @@ def validate_coupon():
             raise APIError("An item in your cart is no longer available.", 409)
         subtotal += product["price_cents"] * quantity
 
-    if coupon["min_order_cents"] > 0 and subtotal < coupon["min_order_cents"]:
-        raise APIError(
-            f"This coupon needs a minimum order of "
-            f"₱{coupon['min_order_cents'] / 100:,.2f}."
-        )
-
-    if coupon["discount_type"] == "percentage":
-        discount = subtotal * coupon["discount_value"] // 100
-        if coupon["max_discount_cents"] > 0:
-            discount = min(discount, coupon["max_discount_cents"])
-    else:
-        discount = min(coupon["discount_value"], subtotal)
+    coupon, discount = coupon_discount(connection, code, user["id"], subtotal)
 
     return jsonify(
         ok=True,
@@ -769,7 +854,10 @@ def checkout():
     if not isinstance(entries, list) or not 1 <= len(entries) <= 50:
         raise APIError("Your cart is empty.")
 
-    coupon_code = (data.get("coupon_code") or "").strip().upper()
+    coupon_code = text_field(data, "coupon_code", 0, 40).upper()
+    checkout_key = text_field(data, "checkout_key", 0, 64)
+    if checkout_key and not CHECKOUT_KEY_RE.fullmatch(checkout_key):
+        raise APIError("Your checkout could not be read. Refresh and try again.")
 
     wanted = {}
     for entry in entries:
@@ -786,6 +874,16 @@ def checkout():
     # Serialize inventory changes and commit the whole order atomically.
     with connection:
         connection.execute("BEGIN IMMEDIATE")
+
+        # A retry of a checkout that already succeeded (e.g. the response was
+        # lost on a flaky connection) gets the original order back.
+        if checkout_key:
+            existing = connection.execute(
+                "SELECT id FROM orders WHERE buyer_id = ? AND checkout_key = ?",
+                (user["id"], checkout_key),
+            ).fetchone()
+            if existing is not None:
+                return jsonify(ok=True, order_id=existing["id"], duplicate=True)
 
         subtotal = 0
         lines = []
@@ -829,32 +927,15 @@ def checkout():
         # firestore.rules restricting `coupons/{id}` updates to usedCount
         # only, and checkout always recomputing totals from the DB).
         discount = 0
+        coupon_id = None
         if coupon_code:
-            coupon = connection.execute(
-                "SELECT * FROM coupons WHERE code = ?", (coupon_code,)
-            ).fetchone()
-            if coupon is None or not coupon["is_active"]:
-                raise APIError("That coupon is no longer valid.", 409)
-
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc).date().isoformat()
-            if now < coupon["start_date"] or now > coupon["end_date"]:
-                raise APIError("That coupon is no longer valid.", 409)
-            if coupon["max_uses"] > 0 and coupon["used_count"] >= coupon["max_uses"]:
-                raise APIError("That coupon has reached its usage limit.", 409)
-            if coupon["min_order_cents"] > 0 and subtotal < coupon["min_order_cents"]:
-                raise APIError("Your order no longer meets this coupon's minimum.", 409)
-
-            if coupon["discount_type"] == "percentage":
-                discount = subtotal * coupon["discount_value"] // 100
-                if coupon["max_discount_cents"] > 0:
-                    discount = min(discount, coupon["max_discount_cents"])
-            else:
-                discount = min(coupon["discount_value"], subtotal)
-
+            coupon, discount = coupon_discount(
+                connection, coupon_code, user["id"], subtotal, conflict=True
+            )
+            coupon_id = coupon["id"]
             connection.execute(
                 "UPDATE coupons SET used_count = used_count + 1 WHERE id = ?",
-                (coupon["id"],),
+                (coupon_id,),
             )
 
         total = max(0, subtotal - discount)
@@ -863,11 +944,12 @@ def checkout():
             """
             INSERT INTO orders
                 (buyer_id, recipient, contact, fulfillment, address,
-                 subtotal_cents, discount_cents, total_cents, coupon_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 subtotal_cents, discount_cents, total_cents, coupon_code,
+                 coupon_id, checkout_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (user["id"], recipient, contact, fulfillment, address,
-             subtotal, discount, total, coupon_code),
+             subtotal, discount, total, coupon_code, coupon_id, checkout_key),
         ).lastrowid
 
         connection.executemany(
@@ -920,11 +1002,17 @@ def customer_cancel_order(order_id):
                 409,
             )
 
-        connection.execute(
-            "UPDATE orders SET status = 'Cancelled' WHERE id = ?", (order_id,)
-        )
+        # Guard on the status just read: if an admin changed the order in the
+        # meantime (e.g. declined it, which already restocked), don't
+        # overwrite that status or return the items to stock a second time.
+        changed = connection.execute(
+            "UPDATE orders SET status = 'Cancelled' WHERE id = ? AND status = ?",
+            (order_id, order["status"]),
+        ).rowcount
+        if changed != 1:
+            raise APIError("Order status changed elsewhere — refresh and try again.", 409)
         record_status(connection, order_id, "Cancelled", "Cancelled by customer", user["username"])
-        _restock_order(connection, order_id)
+        _release_order(connection, order_id)
 
     send_order_email(connection, order_id, "Cancelled")
     return jsonify(ok=True)
@@ -1010,10 +1098,12 @@ def product_reviews(product_id):
         "SELECT COUNT(*) AS count, AVG(rating) AS average FROM reviews WHERE product_id = ?",
         (product_id,),
     ).fetchone()
+    user = current_user()
     return jsonify(
         reviews=[dict(row) for row in rows],
         count=summary["count"],
         average=round(summary["average"], 1) if summary["average"] else None,
+        can_review=user is not None and has_received(connection, user["id"], product_id),
     )
 
 
@@ -1032,6 +1122,10 @@ def create_review(product_id):
     ).fetchone()
     if product is None:
         raise APIError("Product not found.", 404)
+    if not has_received(connection, user["id"], product_id):
+        raise APIError(
+            "Only customers who have received this item can review it.", 403
+        )
 
     with connection:
         try:
@@ -1160,9 +1254,18 @@ def admin_update_product(product_id):
     return jsonify(ok=True)
 
 
-def _restock_order(connection, order_id):
-    """Return a cancelled/declined order's items to stock. Mirrors
-    orderService.updateOrderStatus's inventory-restoration branch."""
+def _release_order(connection, order_id):
+    """Return a cancelled/declined order's items to stock and give its coupon
+    use back. Mirrors orderService.updateOrderStatus's inventory-restoration
+    branch. Callers must only release an order once (status-guarded update)."""
+    connection.execute(
+        """
+        UPDATE coupons SET used_count = used_count - 1
+        WHERE used_count > 0
+          AND id = (SELECT coupon_id FROM orders WHERE id = ?)
+        """,
+        (order_id,),
+    )
     items = connection.execute(
         "SELECT product_id, quantity, is_preorder FROM order_items WHERE order_id = ?",
         (order_id,),
@@ -1184,7 +1287,7 @@ def admin_order_status(order_id):
     admin = require_user(admin=True)
     data = payload()
     target = data.get("status")
-    reason = (data.get("reason") or "").strip()[:300]
+    reason = text_field(data, "reason", 0, 300)
 
     if target not in ORDER_STATUSES:
         raise APIError("Invalid status.")
@@ -1215,7 +1318,7 @@ def admin_order_status(order_id):
         record_status(connection, order_id, target, note, admin["username"])
 
         if target in RESTOCK_STATUSES:
-            _restock_order(connection, order_id)
+            _release_order(connection, order_id)
 
     send_order_email(connection, order_id, target)
     return jsonify(ok=True)
@@ -1269,6 +1372,7 @@ def coupon_fields(data):
         "max_discount_cents": max_discount_cents,
         "min_order_cents": min_order_cents,
         "max_uses": integer_field(data, "max_uses", 0, 1000000),
+        "once_per_customer": int(flag_field(data, "once_per_customer", True)),
         "start_date": start_date,
         "end_date": end_date,
         "is_active": int(flag_field(data, "is_active", True)),
@@ -1287,9 +1391,11 @@ def admin_create_coupon():
                 """
                 INSERT INTO coupons
                     (code, discount_type, discount_value, max_discount_cents,
-                     min_order_cents, max_uses, start_date, end_date, is_active)
+                     min_order_cents, max_uses, once_per_customer,
+                     start_date, end_date, is_active)
                 VALUES (:code, :discount_type, :discount_value, :max_discount_cents,
-                        :min_order_cents, :max_uses, :start_date, :end_date, :is_active)
+                        :min_order_cents, :max_uses, :once_per_customer,
+                        :start_date, :end_date, :is_active)
                 """,
                 fields,
             )
@@ -1313,6 +1419,7 @@ def admin_update_coupon(coupon_id):
                     discount_value = :discount_value,
                     max_discount_cents = :max_discount_cents,
                     min_order_cents = :min_order_cents, max_uses = :max_uses,
+                    once_per_customer = :once_per_customer,
                     start_date = :start_date, end_date = :end_date,
                     is_active = :is_active
                 WHERE id = :id

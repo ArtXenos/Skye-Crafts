@@ -79,14 +79,19 @@ time you run the updated `app.py` against your existing database.
 - Products, prices (₱), and availability come from the database.
 - Cart works before logging in (saved in the browser); log in or register at checkout.
 - A coupon code can be applied at checkout; the discount is always recomputed
-  server-side.
+  server-side. Coupons are one use per customer unless the shop turns that
+  off, follow Philippine time (valid from 12:00 AM on the start date to
+  11:59 PM on the end date), and are given back if the order is cancelled or
+  declined.
+- Retrying a checkout after a dropped connection returns the original order
+  instead of placing a second one.
 - Checkout with **Delivery (J&T Express)** or **Pickup**. The server re-checks prices
   and stock, so the browser can't change them.
 - **Pre-order** products (like the Desk Figurine) have no stock limit.
 - "My orders" shows status updates and history, lets a customer cancel an
   order that hasn't been packed yet, and confirm receipt/pickup once shipped.
-- Customers can leave a 1–5 star rating (with an optional comment) on any
-  product.
+- Customers can leave a 1–5 star rating (with an optional comment) on a
+  product once an order containing it has been delivered.
 - "Create a Custom Order" form and the newsletter signup save to the database.
 
 **Shop owner (`/admin`)**
@@ -113,7 +118,7 @@ time you run the updated `app.py` against your existing database.
 
 - The app sets a 12-hour authenticated session lifetime, CSRF protection, a
   Content Security Policy, and process-local rate limits for login, registration,
-  checkout, newsletter, and custom-order submissions.
+  checkout, coupon checks, newsletter, and custom-order submissions.
 - The built-in rate limiter is suitable only for a single application process. If
   deploying multiple workers or instances, configure equivalent limits at the
   reverse proxy or replace it with a shared rate-limit store.
