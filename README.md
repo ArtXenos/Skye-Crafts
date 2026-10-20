@@ -113,7 +113,7 @@ time you run the updated `app.py` against your existing database.
 
 - The app sets a 12-hour authenticated session lifetime, CSRF protection, a
   Content Security Policy, and process-local rate limits for login, registration,
-  checkout, newsletter, and custom-order submissions.
+  checkout, coupon checks, newsletter, and custom-order submissions.
 - The built-in rate limiter is suitable only for a single application process. If
   deploying multiple workers or instances, configure equivalent limits at the
   reverse proxy or replace it with a shared rate-limit store.

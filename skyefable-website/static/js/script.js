@@ -233,9 +233,12 @@
         <div class="review-list" id="reviewList"></div>
         <form class="review-form" id="reviewForm" hidden>
           <div class="star-rate" id="starRate">
-            ${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" aria-label="${n} star${n === 1 ? "" : "s"}">★</button>`).join("")}
+            ${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" aria-label="${n} star${n === 1 ? "" : "s"}" aria-pressed="false">★</button>`).join("")}
           </div>
           <input type="hidden" name="rating" value="0">
+          <label class="field">Comment <span class="opt">(optional)</span>
+            <textarea name="text" maxlength="2000" rows="2"></textarea>
+          </label>
           <button class="btn btn-secondary btn-sm" type="submit">Rate this</button>
         </form>
       </div>
@@ -291,7 +294,10 @@
     reviewForm.elements.rating.value = 0;
     $("#starRate")
       .querySelectorAll("button")
-      .forEach((star) => star.classList.remove("active"));
+      .forEach((star) => {
+        star.classList.remove("active");
+        star.setAttribute("aria-pressed", "false");
+      });
 
     loadReviews(id);
     openOverlay(productModal);
@@ -310,18 +316,27 @@
       .querySelectorAll("button")
       .forEach((button) => {
         button.classList.toggle("active", Number(button.dataset.star) <= value);
+        button.setAttribute(
+          "aria-pressed",
+          String(Number(button.dataset.star) === value),
+        );
       });
   });
 
   $("#reviewForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const rating = Number(event.currentTarget.elements.rating.value);
+    const fields = event.currentTarget.elements;
+    const rating = Number(fields.rating.value);
     if (!rating) {
       toast("Choose a star rating first.");
       return;
     }
     try {
-      await api(`/api/products/${activeProductId}/reviews`, { rating });
+      await api(`/api/products/${activeProductId}/reviews`, {
+        rating,
+        text: fields.text.value.trim(),
+      });
+      fields.text.value = "";
       toast("Thanks for rating this piece!");
       loadReviews(activeProductId);
     } catch (error) {
@@ -875,7 +890,8 @@
 
   /* ---------------------------------------------- custom order, newsletter */
 
-  $("#customForm").addEventListener("submit", async (event) => {
+  // The custom order section is only rendered on the home page.
+  $("#customForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const submit = $("#customSubmit");

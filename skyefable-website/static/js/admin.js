@@ -264,7 +264,8 @@
                 </select>
               </label>
               <label class="field" id="discountValueField">${isPercent ? 'Discount (%)' : 'Discount (₱)'}
-                <input name="discount_value" type="number" min="0.01" step="0.01" required
+                <input name="discount_value" type="number" required
+                       ${isPercent ? 'min="1" max="100" step="1"' : 'min="0.01" max="100000" step="0.01"'}
                        value="${isPercent ? coupon.discount_value : (coupon.discount_value ? (coupon.discount_value / 100).toFixed(2) : '')}">
               </label>
             </div>
@@ -306,6 +307,18 @@
           </div>
         </div>
       </div>`;
+  }
+
+  // Switch the value field between % and ₱ without re-rendering, so the
+  // chosen type and anything already typed into the form are kept.
+  function syncCouponType(form) {
+    const isPercent = form.elements.discount_type.value === 'percentage';
+    const input = form.elements.discount_value;
+    document.getElementById('discountValueField').firstChild.textContent =
+      isPercent ? 'Discount (%)' : 'Discount (₱)';
+    Object.assign(input, isPercent
+      ? {min: '1', max: '100', step: '1'}
+      : {min: '0.01', max: '100000', step: '0.01'});
   }
 
   /* ------------------------------------------------------ custom requests */
@@ -463,7 +476,7 @@
   });
 
   app.addEventListener('change', async event => {
-    if (event.target.id === 'couponType') { render(); return; }
+    if (event.target.id === 'couponType') { syncCouponType(event.target.form); return; }
 
     const select = event.target.closest('[data-request]');
     if (!select) return;

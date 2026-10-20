@@ -50,6 +50,7 @@ RATE_LIMITS = {
     "/api/login": (10, 300),
     "/api/register": (5, 3600),
     "/api/checkout": (10, 300),
+    "/api/coupons/validate": (20, 300),
     "/api/custom-requests": (5, 3600),
     "/api/newsletter": (5, 3600),
 }
@@ -724,6 +725,8 @@ def validate_coupon():
 
     subtotal = 0
     for entry in entries:
+        if not isinstance(entry, dict):
+            raise APIError("Your cart could not be read.")
         product_id = integer_field(entry, "product_id", 1, 2**63 - 1)
         quantity = integer_field(entry, "quantity", 1, 99)
         product = connection.execute(
@@ -773,7 +776,7 @@ def checkout():
     if not isinstance(entries, list) or not 1 <= len(entries) <= 50:
         raise APIError("Your cart is empty.")
 
-    coupon_code = (data.get("coupon_code") or "").strip().upper()
+    coupon_code = text_field(data, "coupon_code", 0, 40).upper()
 
     wanted = {}
     for entry in entries:
@@ -924,9 +927,15 @@ def customer_cancel_order(order_id):
                 409,
             )
 
-        connection.execute(
-            "UPDATE orders SET status = 'Cancelled' WHERE id = ?", (order_id,)
-        )
+        # Guard on the status just read: if an admin changed the order in the
+        # meantime (e.g. declined it, which already restocked), don't
+        # overwrite that status or return the items to stock a second time.
+        changed = connection.execute(
+            "UPDATE orders SET status = 'Cancelled' WHERE id = ? AND status = ?",
+            (order_id, order["status"]),
+        ).rowcount
+        if changed != 1:
+            raise APIError("Order status changed elsewhere — refresh and try again.", 409)
         record_status(connection, order_id, "Cancelled", "Cancelled by customer", user["username"])
         _restock_order(connection, order_id)
 
@@ -1188,7 +1197,7 @@ def admin_order_status(order_id):
     admin = require_user(admin=True)
     data = payload()
     target = data.get("status")
-    reason = (data.get("reason") or "").strip()[:300]
+    reason = text_field(data, "reason", 0, 300)
 
     if target not in ORDER_STATUSES:
         raise APIError("Invalid status.")

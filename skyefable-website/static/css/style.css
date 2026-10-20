@@ -1762,9 +1762,13 @@ button {
 }
 .review-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
   align-items: flex-start;
+}
+.review-form .field {
+  width: 100%;
 }
 .review-form select {
   width: auto;

@@ -4,8 +4,10 @@ Run with: python -m unittest discover -s tests -v
 """
 import importlib
 import os
+import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 
 class StoreApiTests(unittest.TestCase):
@@ -51,6 +53,42 @@ class StoreApiTests(unittest.TestCase):
             headers=self.csrf(),
         )
         self.assertEqual(response.status_code, 201)
+
+    def login_admin(self):
+        response = self.client.post(
+            "/api/login",
+            json={"username": "testadmin", "password": "test-admin-password-123"},
+            headers=self.csrf(),
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def stocked_product(self):
+        products = self.client.get("/api/state").get_json()["products"]
+        return next(p for p in products if not p["is_preorder"] and p["stock"] > 0)
+
+    def place_order(self, product_id, **extra):
+        response = self.client.post(
+            "/api/checkout",
+            json={
+                "recipient": "Test Customer",
+                "contact": "09171234567",
+                "fulfillment": "pickup",
+                "items": [{"product_id": product_id, "quantity": 1}],
+                **extra,
+            },
+            headers=self.csrf(),
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+        return response.get_json()["order_id"]
+
+    def stock_of(self, product_id):
+        connection = sqlite3.connect(self.database.name)
+        try:
+            return connection.execute(
+                "SELECT stock FROM products WHERE id = ?", (product_id,)
+            ).fetchone()[0]
+        finally:
+            connection.close()
 
     def test_mutations_require_csrf(self):
         response = self.client.post(
@@ -144,6 +182,147 @@ class StoreApiTests(unittest.TestCase):
             headers=self.csrf(),
         )
         self.assertEqual(response.status_code, 201)
+
+    def test_customer_cancel_does_not_restock_twice_when_raced(self):
+        self.register()
+        product = self.stocked_product()
+        order_id = self.place_order(product["id"])
+        stock_before_cancel = self.stock_of(product["id"])
+        database = self.database.name
+
+        class DeclinedMidRequest:
+            """Wraps the request's connection so an admin decline (with its
+            restock) lands between the cancel route's read and its write."""
+
+            def __init__(self, connection):
+                self._connection = connection
+
+            def __getattr__(self, name):
+                return getattr(self._connection, name)
+
+            def __enter__(self):
+                return self._connection.__enter__()
+
+            def __exit__(self, *exc):
+                return self._connection.__exit__(*exc)
+
+            def execute(self, sql, *args):
+                result = self._connection.execute(sql, *args)
+                if sql.startswith("SELECT * FROM orders WHERE id = ? AND buyer_id"):
+                    row = result.fetchone()
+                    with sqlite3.connect(database) as other:
+                        other.execute(
+                            "UPDATE orders SET status = 'Declined' WHERE id = ?",
+                            (order_id,),
+                        )
+                        other.execute(
+                            "UPDATE products SET stock = stock + 1 WHERE id = ?",
+                            (product["id"],),
+                        )
+                    other.close()
+                    return mock.Mock(fetchone=lambda: row)
+                return result
+
+        real_db = self.module.db
+        with mock.patch.object(
+            self.module, "db", lambda: DeclinedMidRequest(real_db())
+        ):
+            response = self.client.post(
+                f"/api/orders/{order_id}/cancel", json={}, headers=self.csrf()
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.stock_of(product["id"]), stock_before_cancel + 1)
+        order = self.client.get("/api/orders").get_json()["orders"][0]
+        self.assertEqual(order["status"], "Declined")
+
+    def test_customer_cancel_restocks_once(self):
+        self.register()
+        product = self.stocked_product()
+        stock_before_order = self.stock_of(product["id"])
+        order_id = self.place_order(product["id"])
+        self.assertEqual(self.stock_of(product["id"]), stock_before_order - 1)
+
+        header = self.csrf()
+        first = self.client.post(f"/api/orders/{order_id}/cancel", json={}, headers=header)
+        second = self.client.post(f"/api/orders/{order_id}/cancel", json={}, headers=header)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(self.stock_of(product["id"]), stock_before_order)
+
+    def test_coupon_validation_is_rate_limited(self):
+        self.register()
+        product = self.stocked_product()
+        header = self.csrf()
+        guess = {"items": [{"product_id": product["id"], "quantity": 1}]}
+        for attempt in range(20):
+            response = self.client.post(
+                "/api/coupons/validate",
+                json={**guess, "code": f"GUESS{attempt}"},
+                headers=header,
+            )
+            self.assertEqual(response.status_code, 404)
+        response = self.client.post(
+            "/api/coupons/validate", json={**guess, "code": "GUESS20"}, headers=header
+        )
+        self.assertEqual(response.status_code, 429)
+
+    def test_malformed_text_fields_are_rejected_not_crashed(self):
+        self.login_admin()
+        coupon = self.client.post(
+            "/api/admin/coupons",
+            json={
+                "code": "SHAPES", "discount_type": "percentage", "discount_value": 10,
+                "max_uses": 0, "start_date": "2020-01-01", "end_date": "2099-12-31",
+                "is_active": True,
+            },
+            headers=self.csrf(),
+        )
+        self.assertEqual(coupon.status_code, 201)
+        product = self.stocked_product()
+        order_id = self.place_order(product["id"])
+        header = self.csrf()
+
+        checkout = self.client.post(
+            "/api/checkout",
+            json={
+                "recipient": "Test Customer", "contact": "09171234567",
+                "fulfillment": "pickup", "coupon_code": 5,
+                "items": [{"product_id": product["id"], "quantity": 1}],
+            },
+            headers=header,
+        )
+        validate = self.client.post(
+            "/api/coupons/validate",
+            json={"code": "SHAPES", "items": [[product["id"], 1]]},
+            headers=header,
+        )
+        status = self.client.post(
+            f"/api/admin/orders/{order_id}/status",
+            json={"status": "Approved", "reason": 5},
+            headers=header,
+        )
+        self.assertEqual(
+            [checkout.status_code, validate.status_code, status.status_code],
+            [400, 400, 400],
+        )
+
+    def test_review_comment_is_saved(self):
+        self.register()
+        product = self.stocked_product()
+        response = self.client.post(
+            f"/api/products/{product['id']}/reviews",
+            json={"rating": 4, "text": "  Lovely colours.  "},
+            headers=self.csrf(),
+        )
+        self.assertEqual(response.status_code, 201)
+        reviews = self.client.get(f"/api/products/{product['id']}/reviews").get_json()
+        self.assertIn("Lovely colours.", [review["text"] for review in reviews["reviews"]])
+
+    def test_products_page_footer_links_reach_home_sections(self):
+        response = self.client.get("/products")
+        self.assertIn(b'href="/#faq"', response.data)
+        self.assertNotIn(b'href="#faq"', response.data)
 
 
 if __name__ == "__main__":

@@ -1,237 +1,295 @@
-# Skye Crafts initial repository audit
+# Skye Crafts repository audit
 
-**Audit date:** 2026-10-21  
-**Scope:** read-only review of the Flask application, database schema, templates,
-browser JavaScript, styles, configuration, documentation, and current tests. No
-application behavior was changed during this audit.
+**Audit dates:** 2026-10-21 (initial pass and second, evidence-driven pass)
+**Scope:** Flask application (`skyefable-website/app.py`), SQLite schema,
+templates, browser JavaScript, configuration, documentation and tests.
 
-## Executive summary
+Findings are marked **Confirmed** only when they were reproduced, either by an
+automated test, a scripted request against a temporary database, or a headless
+browser session against a locally running copy with a temporary database. Code
+reading alone is marked **Hypothesis**. No production system or the real
+`skyefable.db` was touched.
 
-Skye Crafts is a small, server-rendered Flask and SQLite storefront with a
-reasonably solid security baseline for a single-process deployment. It performs
-server-side price, stock, coupon, authorization, and CSRF checks; uses password
-hashing; records order status history; and has a small regression suite covering
-several security-critical paths.
+## 1. Executive summary
 
-The immediate confirmed release blocker is configuration documentation: the
-README tells a new developer to copy `skyefable-website/.env.example`, but that
-file is currently deleted from the working tree. This prevents a documented
-clean setup. The application is **not production ready**: it uses startup-time
-SQLite schema changes, has process-local rate limiting, no deployment/backup
-runbook, and has deliberately deferred payment, shipping, and tax integration.
+Skye Crafts is a small, server-rendered Flask + SQLite storefront. Its security
+baseline is sound for a single-process deployment: passwords are hashed, every
+mutating API call needs a session-bound CSRF token, SQL is parameterised,
+prices/stock/coupons are recomputed on the server, roles are enforced on the
+server, and dynamic HTML is escaped.
 
-## Baseline and how to run
+The second pass found defects that the first pass missed, and two of them are
+user-facing failures:
 
-From `skyefable-website` with Python 3.10+:
+- **The `/products` page never loads its catalogue (UI-001, High).** A script
+  error on that page stops all storefront JavaScript, so the page shows
+  "Loading creations…" forever and the cart, sign-in and account menu are dead.
+  The header "Products" link and the hero call-to-action both lead there.
+- **Fixed-amount coupons cannot be created from the admin page (ADM-001, High).**
+  Choosing "Fixed amount" immediately snaps back to "Percentage" and clears the
+  form.
+- **A customer cancellation that races an admin decline restocks the order
+  twice (DATA-004, High)** and overwrites the admin's `Declined` status.
+
+The application is **not production ready** (section 9). Payment, shipping fees
+and tax are deliberately absent and must not be simulated.
+
+## 2. Baseline and how to run
+
+From `skyefable-website`, with the repository's virtual environment
+(Python 3.14.7, Flask 3.1.3, Werkzeug 3.1.9, python-dotenv 1.2.4):
 
 ```powershell
 ..\.venv\Scripts\python.exe -m unittest discover -s tests -v
-..\.venv\Scripts\python.exe -m py_compile app.py
 ```
 
-Observed on 2026-10-21:
+| Check (before any change in this pass) | Result |
+| --- | --- |
+| Regression suite | 8 passed, 0 failed |
+| `/products` in headless Chrome | **Failed**: `TypeError` at `static/js/script.js:878`, grid never loads |
+| Admin coupon form in headless Chrome | **Failed**: discount type reverts to percentage |
+
+The browser checks were driven over the Chrome DevTools Protocol with a
+throw-away script outside the repository; no browser dependency was added.
+
+## 3. Architecture and feature inventory
+
+One Flask module serves two HTML pages plus a JSON API. Browser JavaScript
+renders everything dynamic; the server is the only authority for prices, stock,
+coupons, order status and roles.
+
+```
+Browser ──(HTML)── GET /, /products, /admin
+   │  common.js  (fetch wrapper + CSRF header, escaping, formatting)
+   │  script.js  (storefront)        admin.js (dashboard)
+   └──(JSON, X-CSRF-Token)── /api/*  ──  app.py  ──  SQLite (WAL, FKs on)
+                                            └── Resend HTTP API (optional email)
+```
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Registration, login, logout | Implemented | Werkzeug hashes; session rotated and CSRF token reissued at login |
+| Account management | **Missing** | No profile edit, password change/reset or email verification |
+| Catalogue, categories, search, filters | Implemented | Client-side filtering over `/api/state`; `/products` broken (UI-001) |
+| Product details and reviews | Partial | Ratings work; **comment field missing from UI** (UI-002) |
+| Cart | Implemented | `localStorage`; reconciled against live stock |
+| Checkout and orders | Implemented (unpaid) | Atomic `BEGIN IMMEDIATE` stock decrement; item price snapshots |
+| Order history, cancel, confirm receipt | Implemented | Cancel race (DATA-004) |
+| Order status workflow (admin) | Implemented | Server-enforced transition table; history recorded |
+| Inventory restoration | Implemented | On Declined/Cancelled; pre-orders bypass stock |
+| Coupons | Implemented | Fixed type unusable from UI (ADM-001); see DATA-001, BIZ-001, BIZ-002 |
+| Custom-order requests | Implemented | Public form; admin status updates |
+| Newsletter | Implemented | Collects emails; no unsubscribe or consent record (BIZ-004) |
+| Admin dashboard | Implemented | Shows only newest 200 orders (PERF-001) |
+| Customer management (admin) | **Missing** | No customer list, disable or role management |
+| Email notifications | Optional | Synchronous Resend call after commit; failures logged |
+| Payments, shipping fees, tax | Deliberately absent | Documented in README |
+
+## 4. Confirmed defects
+
+| ID | Severity | Category | Location | Status |
+| --- | --- | --- | --- | --- |
+| UI-001 | High | Functionality | `static/js/script.js:878` | Fixed in this pass |
+| ADM-001 | High | Functionality | `static/js/admin.js:466` | Fixed in this pass |
+| DATA-004 | High | Inventory integrity | `app.py` `customer_cancel_order` | Fixed in this pass |
+| CFG-001 | High | Configuration | `.env.example` | Fixed (commit `94d20b1`) |
+| SEC-002 | Medium | Abuse prevention | `/api/coupons/validate` | Fixed in this pass |
+| UI-002 | Medium | Incomplete feature | review form in `script.js` | Fixed in this pass |
+| VAL-001 | Low | Input validation | `app.py` checkout, coupon validation, admin status | Fixed in this pass |
+| UI-003 | Low | Navigation | footer of `templates/index.html` | Fixed in this pass |
+
+### UI-001 — `/products` never loads (High, Confirmed)
+
+- **Evidence:** headless Chrome on `/products` logs
+  `TypeError: Cannot read properties of null (reading 'addEventListener') at
+  script.js:878`. `#customForm` is inside the `{% if page_mode != 'products' %}`
+  block of `templates/index.html`, but `script.js` binds it unconditionally. The
+  throw happens before `loadState()` is called at the end of the file.
+- **Expected:** the full catalogue, a working cart and sign-in.
+  **Actual:** "Loading creations…" forever; no handlers are attached.
+- **Impact:** the main browse-and-buy entry point is unusable.
+- **Fix:** bind the custom-order form only when it exists.
+- **Regression test:** the browser smoke check in section 8; the server-side
+  test asserts the page omits the form, which is why the script must tolerate
+  its absence.
+
+### ADM-001 — Fixed-amount coupons cannot be created (High, Confirmed)
+
+- **Evidence:** in headless Chrome, setting "Discount type" to "Fixed amount"
+  re-renders the coupon form from the saved coupon (or the percentage default),
+  so the select returns to "Percentage" and typed values are erased.
+  Submitting therefore never sends `discount_type: "fixed"`.
+- **Fix:** update the value field's label and limits in place instead of
+  re-rendering the form.
+- **Regression test:** browser check that the selection and typed code survive
+  the change and a fixed coupon is saved with the right type and value.
+
+### DATA-004 — Cancellation race double-restocks inventory (High, Confirmed)
+
+- **Evidence:** a scripted reproduction made the admin decline the order (which
+  restocks it) between the customer-cancel route's `SELECT` and its `UPDATE`.
+  Stock went 10 → 8 at checkout → **12** afterwards, and the order status
+  `Declined` was overwritten with `Cancelled`. The route's `UPDATE` had no
+  `AND status = ?` guard; the admin route already had one.
+- **Impact:** phantom stock that can be sold; the audit trail misstates who
+  ended the order.
+- **Fix:** make the update conditional on the status that was read, and reject
+  with 409 if it changed, before restocking.
+- **Regression test:** `test_customer_cancel_does_not_restock_twice_when_raced`.
+
+### SEC-002 — Coupon codes can be guessed without limit (Medium, Confirmed)
+
+- **Evidence:** 30 consecutive guesses at `/api/coupons/validate` from one
+  signed-in client all returned 404; none was throttled.
+- **Fix:** add the endpoint to the existing per-IP limiter (20 requests per
+  5 minutes).
+- **Regression test:** `test_coupon_validation_is_rate_limited`.
+
+### UI-002 — Review comments cannot be written (Medium, Confirmed)
+
+- **Evidence:** the API and the admin page support an optional review comment
+  (up to 2,000 characters) and README advertises it, but the storefront review
+  form contains only star buttons and posts `{rating}`.
+- **Fix:** add a labelled, optional comment field and send it.
+
+### VAL-001 — Malformed fields cause HTTP 500 (Low, Confirmed)
+
+- **Evidence:** `coupon_code: 5` at checkout and `reason: 5` on the admin status
+  route raised `AttributeError` (500). A non-object cart entry on
+  `/api/coupons/validate` hits the same failure once a valid code is used.
+- **Fix:** use the shared `text_field` validator and the same cart-entry check
+  as checkout; return 400.
+- **Regression tests:** `test_malformed_text_fields_are_rejected_not_crashed`.
+
+### UI-003 — Footer links go nowhere on `/products` (Low, Confirmed)
+
+- **Evidence:** on `/products` the footer's `#custom`, `#gallery` and `#faq`
+  links target sections that are only rendered on the home page.
+- **Fix:** point them at the home page anchors, as the header already does.
+
+## 5. Risks requiring a business decision
+
+These are confirmed facts about current behaviour; whether they are defects
+depends on a policy only the shop owner can set. They are **not changed**.
+
+| ID | Severity | Current behaviour | Decision needed |
+| --- | --- | --- | --- |
+| DATA-001 | Medium | A cancelled/declined order still counts against a coupon's usage limit (confirmed: a `max_uses = 1` coupon is exhausted by an order that was cancelled) | Release the use on cancel/decline? |
+| BIZ-001 | Medium | No per-customer limit: one account can redeem the same coupon on every order | Should coupons be one-per-customer (always or per coupon)? |
+| BIZ-002 | Low | Coupon start/end dates are compared in **UTC**; in the Philippines (UTC+8) a coupon becomes valid at 08:00 and stays valid until 07:59 the day after its end date | Use Philippine time (`Asia/Manila`) for coupon dates? |
+| DATA-002 | Medium | No idempotency key: a retried checkout after a lost response creates a second order and reserves stock again | Accept a client-generated key and return the original order on repeat? |
+| BIZ-003 | Low | Any signed-in customer can review any visible product, purchased or not | Restrict reviews to customers with a delivered order? |
+| BIZ-004 | Low | Newsletter has no unsubscribe link or consent timestamp beyond signup time | Required before sending any campaign (data-privacy obligations) |
+
+## 6. Security and data-integrity findings
+
+Confirmed controls: hashed passwords; session fixation prevented
+(`session.clear()` on login); CSRF token compared in constant time; `SameSite=Lax`,
+`HttpOnly` cookies, `Secure` + HSTS behind `COOKIE_SECURE=1`; restrictive CSP
+(`script-src 'self'`), `X-Frame-Options: DENY`, `nosniff`; `no-store` on API
+responses; 64 KB request limit; parameterised SQL throughout; customer order
+queries scoped by `buyer_id`; admin routes all call `require_user(admin=True)`;
+self-registration cannot set `is_admin`; existing customers are never promoted
+to admin from configuration.
+
+| ID | Severity | Type | Finding |
+| --- | --- | --- | --- |
+| SEC-001 | Medium | Confirmed (by design) | Rate limits are process-local; multiple workers multiply the allowance |
+| SEC-003 | Medium | Hypothesis (deployment) | Limits key on `request.remote_addr`. Behind a reverse proxy every visitor shares the proxy's address, so 10 failed logins by anyone would lock everyone out for 5 minutes. Needs `ProxyFix` configured for the actual proxy depth at deployment time |
+| SEC-004 | Low | Hypothesis | Login for an unknown username skips the password-hash check, so response time can reveal whether a username exists |
+| SEC-005 | Low | Confirmed | Changing `ADMIN_PASSWORD` in `.env` does not change an existing admin's password; there is no password-change feature at all |
+| DATA-003 | Medium | Confirmed (by design) | Inventory correctness relies on SQLite write serialisation on a single host |
+| OPS-001 | Medium | Confirmed | Schema changes run at startup with no migration versioning, backup check or restore drill |
+
+The audit did not run an external dependency-vulnerability scan, penetration
+test or email-provider test.
+
+## 7. UI/UX and accessibility
+
+Strengths: labelled form fields, `role="alert"` errors, live regions, dialog
+roles with Escape-to-close, a Tab focus trap and focus return, visible focus
+styles, reduced-motion CSS and responsive breakpoints.
+
+| ID | Severity | Finding |
+| --- | --- | --- |
+| A11Y-001 | Low | Opening the cart drawer does not move focus into it, and it is not trapped like the modals |
+| A11Y-002 | Low | Admin tabs use `role="tab"` without `aria-controls` or arrow-key navigation |
+| A11Y-003 | Low | Star rating buttons did not expose the selected value; fixed in this pass with `aria-pressed` |
+| UI-004 | Low | Footer TikTok link is a placeholder (`href="#"`) |
+| A11Y-004 | Low | Opening a product dialog leaves focus on the page body (observed in headless Chrome; pre-existing), so screen-reader users are not taken into the dialog |
+| UI-005 | Low | A coupon that becomes invalid between "Apply" and "Place order" leaves the stale discount on screen after the 409 error |
+
+Colour contrast and screen-reader announcements still need a manual pass with
+real assistive technology.
+
+## 8. Performance and maintainability
+
+| ID | Severity | Finding |
+| --- | --- | --- |
+| PERF-001 | Medium | `/api/admin/overview` returns only the newest 200 orders and requests, with no paging: older orders become unmanageable from the dashboard |
+| PERF-002 | Low | Order emails are sent synchronously (5 s timeout) inside the request, after commit |
+| MAINT-001 | Low | Coupon eligibility and discount maths are duplicated between `validate_coupon` and `checkout` |
+| MAINT-002 | Low | `app.py` holds configuration, schema, validation, routes and email in one 1,400-line module |
+| TEST-001 | Medium | Coverage still thin for stock exhaustion, coupon boundaries, transitions and ownership; there are no automated browser tests. This is how UI-001 and ADM-001 went unnoticed |
+
+At current catalogue size the client-side filtering and single state request
+are appropriate; no measured bottleneck justifies optimisation yet.
+
+## 9. Production readiness
+
+**Status: not ready for public production.** Before launch:
+
+1. Serve with a production WSGI server (for example Waitress on Windows or
+   Gunicorn on Linux) behind HTTPS; set `COOKIE_SECURE=1`.
+2. Configure `ProxyFix` for the real proxy (SEC-003), and shared or proxy-level
+   rate limits if more than one worker runs (SEC-001).
+3. Schedule SQLite backups (`sqlite3 skyefable.db ".backup ..."`), and test a
+   restore before relying on them.
+4. Introduce versioned migrations before the next schema change (OPS-001).
+5. Collect application logs and alert on 5xx responses and email failures.
+6. Settle payment, shipping-fee, tax and fulfilment requirements with real
+   providers; never mark recorded orders as paid.
+
+## 10. Recommended new features (with justification)
+
+| Feature | Why |
+| --- | --- |
+| Password change and reset by email | Customers and the admin currently cannot recover or rotate a password (SEC-005) |
+| Admin order paging and search | Needed as soon as there are more than 200 orders (PERF-001) |
+| Customer list for the admin | Prompt-listed requirement; needed to answer customer queries and disable abusive accounts |
+| Product images | The catalogue uses category illustrations only; real photos matter for handmade goods |
+| Low-stock indicator in admin | Stock is placeholder data and is already tracked; a simple threshold view helps restocking |
+
+## 11. Prioritised roadmap
+
+| Step | Items | State |
+| --- | --- | --- |
+| 1 | CFG-001 | Done |
+| 2 | UI-001, ADM-001, DATA-004 (High) | Done in this pass |
+| 3 | SEC-002, UI-002, VAL-001, UI-003 | Done in this pass |
+| 4 | Owner decisions on DATA-001, BIZ-001, BIZ-002, DATA-002, BIZ-003 | **Blocked on owner** |
+| 5 | TEST-001: stock-boundary, coupon-limit and transition tests; a repeatable browser smoke test | Pending |
+| 6 | PERF-001 paging; password change (SEC-005) | Pending |
+| 7 | Production items in section 9 (SEC-001, SEC-003, OPS-001) | Pending; needs hosting decision |
+| 8 | Accessibility refinements A11Y-001, A11Y-002, A11Y-004, UI-004, UI-005 (A11Y-003 done in this pass) | Pending |
+
+## 12. Verification log (2026-10-21, after the fixes)
 
 | Check | Result |
 | --- | --- |
-| Unit/integration regression suite | 8 passed, 0 failed (1.138 s) |
-| Python compilation of `app.py` | passed |
-| `pip check` | no broken requirements found |
+| `python -m unittest discover -s tests -v` (with `-W error::ResourceWarning`) | **14 passed**, 0 failed |
+| New tests run against the code *before* the fixes | 4 failed as expected (race, coupon rate limit, malformed fields, footer links); 2 new coverage tests passed on old code too |
 | `git diff --check` | passed |
+| Headless Chrome, `/products` | 4 products rendered, add-to-cart updates the count, no console errors |
+| Headless Chrome, home page | 4 featured products, no console errors |
+| Headless Chrome, admin coupon form | "Fixed amount" stays selected, typed code kept; ₱50 fixed coupon saved as `fixed` / 5000 centavos |
+| Headless Chrome, review form | Comment saved and returned by the API; selected star exposes `aria-pressed="true"` |
 
-The current worktree is not clean. It has user changes to `app.py` and
-`tests/test_app.py`, and a deletion of `.env.example`; these were not modified
-by this audit.
+Behaviour changes to note: an admin status `reason` longer than 300 characters
+is now rejected with 400 instead of being silently truncated (the admin form
+already caps input at 300), and a `coupon_code` longer than 40 characters at
+checkout returns 400 instead of 409.
 
-## Architecture and feature inventory
-
-| Area | Implementation status | Evidence |
-| --- | --- | --- |
-| Web application | Implemented | `skyefable-website/app.py`; Flask pages at `/`, `/products`, and `/admin` |
-| Data store | Implemented, SQLite | schema and startup initialization in `app.py:139-300`; foreign keys and WAL enabled |
-| Authentication | Implemented | registration, login, logout; Werkzeug password hashes; signed Flask sessions |
-| Customer account | Partial | sign-in and order lookup exist; no profile editing, password reset, or email verification |
-| Catalogue | Implemented | active products, categories, search/filter UI, product details and reviews |
-| Cart | Implemented, browser-local | localStorage cart in `static/js/script.js`; server recalculates checkout values |
-| Checkout/orders | Implemented, unpaid order recording | atomic stock decrement, order-item price snapshots, order history and cancellation |
-| Inventory | Implemented for one SQLite process | conditional stock decrement and restoration on cancellation/decline; pre-orders bypass stock |
-| Coupons | Implemented | server-side date, cap, minimum, discount, and use-count checks |
-| Customer reviews | Implemented | one upserted 1–5-star review per customer/product |
-| Custom requests/newsletter | Implemented | database-backed public submissions and admin views |
-| Administration | Implemented | role-protected products, orders, coupons, requests, reviews, subscribers |
-| Email | Optional/best-effort | Resend request on status changes only when configured; failures are logged |
-| Payments, tax, shipping rate | Intentionally absent | documented in `README.md` |
-| Automated tests | Partial | 8 Flask test-client cases in `tests/test_app.py` |
-
-## Confirmed findings
-
-### CFG-001 — Missing documented environment template
-
-**Severity:** High  
-**Category:** configuration / deployability  
-**Affected files:** `README.md`, `skyefable-website/.env.example`
-
-`README.md` instructs developers to run `copy .env.example .env`, but
-`.env.example` is deleted in the current worktree (`git status` shows it as a
-tracked deletion). A clean developer setup following the README therefore
-fails. The local `.env` file is ignored, which is correct; its credentials
-should not be copied into version control.
-
-**Recommended fix:** restore a tracked, credential-free `.env.example` with
-placeholder values and keep `.env` ignored. Add a setup smoke test or CI check
-that verifies the referenced file exists.
-
-**Regression test:** assert the template exists and includes the non-secret
-configuration keys used by the app.  
-**Effort/dependencies:** small; no business decision required.
-
-## Risks requiring a business decision or further verification
-
-### DATA-001 — Coupon capacity is not released for cancelled/declined orders
-
-**Severity:** Medium  
-**Category:** business-rule/data integrity  
-**Affected module:** `app.py` checkout and cancellation/status workflows
-
-Checkout increments `coupons.used_count`; neither the customer cancellation
-route nor the admin decline/cancellation route decrements it. This is a
-confirmed implementation fact. Whether it is a defect depends on the intended
-policy: a coupon may be consumed on placement, or only on a completed/paid
-order. With the latter policy, cancelled orders can exhaust a limited coupon.
-
-**Decision needed:** state precisely when a coupon is consumed and whether an
-admin may alter or delete a coupon that has historical redemptions.
-
-### DATA-002 — Duplicate checkout submissions have no idempotency key
-
-**Severity:** Medium  
-**Category:** order integrity  
-**Affected module:** `app.py:759-890`, checkout UI in `static/js/script.js`
-
-Each accepted checkout POST creates a new order and reduces stock. The UI
-disables its submit button while awaiting one response, but a retry after an
-ambiguous network failure or a manually replayed request can create another
-order. No request identifier is persisted or deduplicated.
-
-**Recommended fix:** agree the retry semantics, then persist a customer-scoped
-idempotency key and return the original order for a repeated key. Test repeated
-POSTs and interrupted responses.
-
-### DATA-003 — Inventory concurrency is SQLite/single-host scoped
-
-**Severity:** Medium  
-**Category:** scalability / data integrity  
-**Affected module:** `app.py:124-129`, `app.py:790-887`
-
-The checkout transaction uses `BEGIN IMMEDIATE` plus a conditional stock update,
-which is appropriate for one SQLite database file. It serializes writers and
-will become a throughput/operational constraint for multiple workers or hosts;
-the documentation does not define a multi-instance database strategy.
-
-**Recommended fix:** retain the current model for a small single-instance shop,
-document it explicitly, and plan a managed database plus versioned migrations
-before horizontal scaling. Add a two-client stock boundary test now.
-
-### SEC-001 — Rate limiting is not shared across workers
-
-**Severity:** Medium  
-**Category:** abuse prevention  
-**Affected module:** `app.py:45-57`, `app.py:540-555`
-
-Login, registration, checkout, newsletter, and custom-request limits are
-process-local in-memory queues keyed by client IP. They work in one process but
-can be bypassed by distributing requests across workers or instances. README
-already notes this limitation.
-
-**Recommended fix:** enforce equivalent limits at the reverse proxy/CDN or use
-a shared rate-limit store before multi-worker deployment.
-
-### OPS-001 — Schema changes run on application startup
-
-**Severity:** Medium  
-**Category:** migration safety / operations  
-**Affected module:** `app.py:139-300`
-
-Schema creation and `ALTER TABLE` compatibility changes run whenever the app
-starts. There is no migration version table, migration command, backup check,
-or restoration verification. This is manageable for the current small schema
-but unsuitable as the change history grows.
-
-**Recommended fix:** introduce versioned migrations and an operational backup,
-restore, deploy, and rollback runbook before production database changes.
-
-### TEST-001 — Critical workflows lack automated coverage
-
-**Severity:** Medium  
-**Category:** reliability  
-**Affected module:** `tests/test_app.py`
-
-The existing eight tests cover CSRF, login limiting, admin isolation, database
-price calculation, date validation, security headers, products routing, and an
-optional custom field. They do not cover stock exhaustion/restoration, coupon
-use boundaries, order status transitions, customer ownership checks, duplicate
-checkout handling, product editing with historical orders, review authorization,
-or error/transaction behavior.
-
-**Recommended fix:** add isolated Flask integration tests as each high-priority
-change is made; do not modify the real `skyefable.db`.
-
-### UX-001 — Accessibility is a good baseline but needs browser-assisted QA
-
-**Severity:** Low  
-**Category:** accessibility / UI quality  
-**Affected files:** templates, `static/js/script.js`, `static/css/style.css`
-
-The reviewed markup includes labelled controls, live/error regions, dialogs,
-keyboard close handling, focus-visible styles, responsive breakpoints, and
-reduced-motion CSS. Static review cannot verify modal focus trapping, focus
-return, color contrast, touch layouts, or screen-reader announcements.
-
-**Recommended fix:** conduct keyboard and screen-reader/browser testing on
-mobile and desktop and resolve observed issues. Add a lightweight automated
-accessibility scan if a test browser is introduced.
-
-## Security review summary
-
-Confirmed controls include password hashing, server-side role checks, a
-server-issued CSRF token required for mutating API calls, parameterized SQL,
-output escaping for dynamic HTML rendering, request-size limits, secure-cookie
-configuration, and restrictive browser security headers. The reviewed JavaScript
-uses a shared escaping helper where server/user values are inserted with
-`innerHTML`.
-
-The audit did not perform live penetration testing, package vulnerability
-scanning against an external advisory feed, email-provider testing, or a
-production-host review. No raw credentials are recorded in this report.
-
-## Production readiness
-
-**Status: not ready for public production.**
-
-Before deployment, define the hosting topology and HTTPS termination; set a
-production secret and `COOKIE_SECURE=1`; use a production WSGI server; put
-shared abuse limits in place if more than one worker is used; establish backups
-and a tested restore procedure; move to versioned migrations; configure log
-collection and alerting; and decide payment, tax, shipping, fulfilment, and
-coupon-cancellation policies. Never represent recorded unpaid orders as paid.
-
-## Prioritized improvement roadmap
-
-1. **CFG-001 (High):** restore the non-secret environment template and correct
-   setup documentation; add a smoke test.
-2. **TEST-001 / DATA-003:** add checkout stock-boundary, cancellation/restock,
-   and transition tests against temporary databases.
-3. **DATA-001:** make the coupon cancellation policy explicit, then implement
-   and test it if redemptions should be released.
-4. **DATA-002:** decide retry behavior and add idempotent checkout handling.
-5. **OPS-001 / SEC-001:** before public or multi-worker deployment, adopt
-   migrations, backups/restore drills, a WSGI deployment configuration, and
-   shared/proxy rate limits.
-6. **UX-001:** run manual accessibility and responsive browser QA, then address
-   actual observed defects.
-
-## Deferred requirements
-
-Payment collection, taxes, shipping-rate calculation, carrier integration,
-image uploads, verified customer email, and password recovery have not been
-implemented. Each needs product/business requirements and appropriate external
-providers; none should be simulated as a real payment or fulfilled order.
+Not verified: real email delivery, multi-worker deployment, mobile devices and
+screen readers. The browser checks used a throw-away script outside the
+repository and are not yet a repeatable test (roadmap step 5).
