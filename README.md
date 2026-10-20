@@ -4,11 +4,13 @@ The Skye Crafts storefront (design, copy, and products) runs on a Flask + SQLite
 backend: products come from a database, customers can create accounts and
 place orders, and the shop owner manages everything from `/admin`.
 
-
+A full audit of the application (findings, fixes, test results, and the
+roadmap) is in [AUDIT_REPORT.md](AUDIT_REPORT.md).
 
 ## Folder structure
 
 ```
+AUDIT_REPORT.md            Audit findings, verification log, and roadmap
 skyefable-website/
 ├── app.py                 Flask backend (API, database, sessions)
 ├── requirements.txt
@@ -17,17 +19,19 @@ skyefable-website/
 ├── templates/
 │   ├── index.html         The storefront
 │   └── admin.html         Shop owner dashboard
-└── static/
-    ├── css/style.css      Skye Crafts design + styles for the shop/admin parts
-    └── js/
-        ├── common.js      Shared helpers (API calls, ₱ formatting, toast)
-        ├── script.js      Storefront: products, cart, login, checkout, orders, reviews
-        └── admin.js        Admin dashboard: orders, products, coupons, requests, reviews
+├── static/
+│   ├── css/style.css      Skye Crafts design + styles for the shop/admin parts
+│   └── js/
+│       ├── common.js      Shared helpers (API calls, ₱ formatting, toast)
+│       ├── script.js      Storefront: products, cart, login, checkout, orders, reviews
+│       └── admin.js       Admin dashboard: orders, products, coupons, requests, reviews
+└── tests/
+    └── test_app.py        Regression tests (use a temporary database)
 ```
 
 ## Run it
 
-Requires Python 3.10+.
+Requires Python 3.10+. Run these commands from the `skyefable-website` folder.
 
 ```bash
 python -m venv .venv
@@ -49,7 +53,12 @@ Open `.env` and set:
   `python -c "import secrets; print(secrets.token_hex(32))"`
 - `ADMIN_USERNAME` and `ADMIN_PASSWORD` — your shop owner login
   (3–30 letters/numbers/underscores, and a password of 10+ characters)
-- `RESEND_API_KEY` — optional, enables order-status emails (see above)
+- `RESEND_API_KEY` — optional. When set, customers who gave an email address
+  get an email each time their order status changes, sent through
+  [Resend](https://resend.com); set `EMAIL_FROM` to a sender on your verified
+  domain. Without it, everything else works the same.
+- `DATABASE_PATH` — optional, to keep the database somewhere other than
+  `skyefable-website/skyefable.db`.
 
 Then start the site:
 
@@ -58,8 +67,17 @@ python app.py
 ```
 
 Open http://127.0.0.1:5000 for the shop and http://127.0.0.1:5000/admin for the
-dashboard. Opening `index.html` directly from disk no longer works, because the
-page needs the server.
+dashboard. The pages need this server: opening `index.html` directly from disk,
+or with VS Code's Live Server ("Go Live", port 5500), shows an unstyled page
+with no products, because neither runs the Python code or the `/api` routes.
+
+For automatic restarts while editing Python files (on your own machine only):
+
+```bash
+# Windows PowerShell:  $env:FLASK_DEBUG = "1"
+# macOS/Linux:         export FLASK_DEBUG=1
+python -m flask --app app run
+```
 
 Run the API regression suite with:
 
@@ -69,9 +87,12 @@ python -m unittest discover -s tests -v
 
 The database (`skyefable.db`) is created on first start with your four products.
 The stock numbers are placeholders, so set the real ones in the admin page.
-If you're upgrading from an earlier version of this project, the new columns
-(coupon fields, status history, reviews) are added automatically the first
-time you run the updated `app.py` against your existing database.
+If you're upgrading from an earlier version of this project, new tables and
+columns (coupon fields and per-customer limits, status history, reviews,
+order-to-coupon links, duplicate-checkout keys) are added automatically the
+first time you run the updated `app.py` against your existing database.
+Existing data is kept. **Back up `skyefable.db` before upgrading** (stop the
+app, then copy the file).
 
 ## What's connected
 
@@ -100,16 +121,23 @@ time you run the updated `app.py` against your existing database.
   Decline/Cancel. Full status history is shown per order.
 - Products: add, edit, change price and stock, mark pre-order, hide from the shop.
 - Coupons: create percentage or fixed-amount codes with a cap, minimum order,
-  usage limit, and date range.
+  usage limit, one-use-per-customer option (on by default), and date range.
 - Custom order requests: read them and set a status.
 - Reviews: see every rating and comment left on a product.
 - Newsletter subscribers list.
 
 ## Not built yet
 
-- **Payment.** Checkout records the order but collects no payment, and shipping fees
-  aren't calculated. (See "Deliberately not ported" above.)
-- **Image uploads** for products and custom requests (customers can paste a link).
+- **Payment, shipping fees, and tax.** Checkout records the order but collects
+  no payment and calculates no shipping fee or tax. These need a payment
+  provider and shipping rules to be chosen first.
+- **Password change and reset.** Customers and the admin can't change or
+  recover a password yet.
+- **Admin order paging and a customer list.** The dashboard shows the newest
+  200 orders and requests only.
+- **Product photos and image uploads.** Products use category illustrations;
+  custom-order customers can only describe or link a reference in the details.
+- **Newsletter unsubscribe link.** Needed before sending any email campaign.
 - **Distributed abuse protection** for multi-worker or multi-instance hosting.
 - **Production hosting.** `python app.py` is Flask's development server. Before going
   public, serve it with a production server, use HTTPS, and set `COOKIE_SECURE=1`.
